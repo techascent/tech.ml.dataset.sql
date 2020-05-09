@@ -1,0 +1,9 @@
+#!/bin/bash
+
+docker run --name postgres-dev               \
+    -d                                       \
+    -e POSTGRES_USER=dev-user                \
+    -e POSTGRES_PASSWORD=unsafe-bad-password \
+    -p 5432:5432                             \
+    -v $(pwd)/data:/var/lib/postgresql/data  \
+    postgres
