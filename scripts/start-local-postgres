@@ -1,6 +1,6 @@
 #!/bin/bash
 
-docker run --name postgres-dev               \
+docker run --restart=always --name postgres-dev \
     -d                                       \
     -e POSTGRES_USER=dev-user                \
     -e POSTGRES_PASSWORD=unsafe-bad-password \
