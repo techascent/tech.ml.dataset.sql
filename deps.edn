@@ -6,4 +6,4 @@
            {:extra-deps {criterium                      {:mvn/version "0.4.5"}
                          ch.qos.logback/logback-classic {:mvn/version "1.1.3"}
                          postgresql/postgresql          {:mvn/version "9.1-901-1.jdbc4"}
-                         techascent/tech.ml.dataset     {:mvn/version "2.0-beta-39"}}}}}
+                         techascent/tech.ml.dataset     {:mvn/version "2.0-beta-43"}}}}}
