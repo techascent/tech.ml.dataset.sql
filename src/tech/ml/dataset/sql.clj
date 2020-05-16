@@ -109,25 +109,32 @@
   `(if-let [value# ~value]
      (.add (as-list ~container) ~value)
      (do
-       (.add ~missing ~row-idx)
+       (.add ~missing (dec ~row-idx))
        (.add (as-list ~container) ~missing-value))))
 
 
 (defmacro ^:private impl-read-fn
   [datatype results container missing missing-value idx]
   `(fn [^long row-idx#]
-     (->> (read-results ~datatype ~results ~idx)
-          (add-to-container! ~datatype ~container ~missing ~missing-value row-idx#))))
+     (let [entry# (read-results ~datatype ~results ~idx)]
+       (if-not (and (.wasNull ~results)
+                    (not= entry# ~missing-value))
+         (add-to-container! ~datatype ~container ~missing
+                            ~missing-value row-idx# entry#)
+         (add-to-container! ~datatype ~container ~missing
+                            ~missing-value row-idx# nil)))))
 
 
 (defn ^:private make-read-fn
-  [results datatype container idx]
+  [results datatype container missing idx]
   (let [results (as-result-set results)
         idx (long idx)
-        missing (bitmap/->bitmap)
+        ^RoaringBitmap missing missing
         missing-value (col-impl/datatype->missing-value datatype)]
     ;;conversion of datatype from runtime to compile time
     (case datatype
+      :boolean (impl-read-fn :boolean results container
+                             missing missing-value idx)
       :string (impl-read-fn :string results container
                             missing missing-value idx)
       :int8 (impl-read-fn :int8 results container
@@ -158,13 +165,15 @@
      (let [columns (->> (result-set-metadata->data (.getMetaData results))
                         (map-indexed
                          (fn [idx {:keys [datatype name]}]
-                           (let [container (col-impl/make-container datatype)]
+                           (let [container (col-impl/make-container datatype)
+                                 missing (bitmap/->bitmap)]
                              {:name name
                               :datatype datatype
                               :data container
-                              :missing (bitmap/->bitmap)
+                              :missing missing
                               :parse-fn (make-read-fn results datatype
-                                                      container (inc idx))}))))
+                                                      container missing
+                                                      (inc idx))}))))
            parse-fns (mapv :parse-fn columns)]
        (loop [continue? (.next results)]
          (when continue?
@@ -181,9 +190,13 @@
 
 (defn sql->dataset
   ([^Connection conn sql options]
-   (with-open [statement (.createStatement conn)]
-     (-> (.executeQuery statement sql)
-         (result-set->dataset options))))
+   (try
+     (with-open [statement (.createStatement conn)]
+       (-> (.executeQuery statement sql)
+           (result-set->dataset options)))
+     (catch Throwable e
+       (.rollback conn)
+       (throw e))))
   ([^Connection conn sql]
    (sql->dataset conn sql {})))
 
@@ -202,13 +215,16 @@
   [dtype sql-dtype]
   (swap! datatype->sql-datatype-map assoc dtype sql-dtype))
 
-(->> [:int16 "int2"
-      :int32 "int4"
-      :int64 "int8"
-      :float32 "float4"
-      :float64 "float8"
+(->> [:boolean "bool"
+      :int8 "tinyint"
+      :int16 "smallint"
+      :int32 "integer"
+      :int64 "bigint"
+      :float32 "float"
+      :float64 "double"
       :string "varchar"
       :local-date "date"
+      :local-date-time "date"
       :zoned-date-time "date"
       :instant "date"]
      (partition 2)
@@ -227,9 +243,80 @@
                                  dtype))))))
 
 
+(defn sanitize-dataset-names-for-sql
+  [ds]
+  (ds/rename-columns ds (->> (ds/column-names ds)
+                             (map (fn [cname]
+                                    (let [name-str (->str cname)]
+                                      [cname (.replace name-str "-" "_")])))
+                             (into {}))))
+
+
+(defn execute-update!
+  [^Connection conn sql]
+  (with-open [stmt (.createStatement conn)]
+    (try
+      (.executeUpdate stmt sql)
+      (.commit conn)
+      (catch Throwable e
+        (.rollback conn)
+        (throw (ex-info (format "Error executing:\n%s\n%s"
+                                sql e)
+                        {:error e}))))))
+
+
+(defn dataset->table-name
+  [dataset]
+  (cond
+    (string? dataset)
+    dataset
+    (keyword? dataset)
+    (->str dataset)
+    (symbol? dataset)
+    (->str dataset)
+    :else
+    (->str (ds/dataset-name dataset))))
+
+
+(defn table-exists?
+  "Test if a table exists.
+
+  conn - java.sql.Connection
+  dataset - string, keyword, symbol, or dataset."
+  [conn dataset]
+  (try
+    (sql->dataset conn (format "Select COUNT(*) from %s where 1 = 0"
+                               (dataset->table-name dataset)))
+    true
+    (catch Throwable e
+      false)))
+
+
+(defn drop-table!
+  "Drop a table.  Exception upon failure to drop the table.
+
+  conn - java.sql.Connection
+  dataset - string, keyword, symbol, or dataset."
+  [conn dataset]
+  (execute-update! conn (format "DROP TABLE %s"
+                                (dataset->table-name dataset))))
+
+
+(defn drop-table-when-exists!
+  [conn dataset]
+  (when (table-exists? conn dataset)
+    (drop-table! conn dataset)))
+
+
 (defn create-table!
+  "Create a table.  Exception upon failure to drop the table.
+
+  conn - java.sql.Connection
+  dataset - dataset to use.  The dataset-name will be used as the table-name and the
+     column names and datatypes will be used for the sql names and datatypes."
   ([^Connection conn dataset options]
-   (let [table-name (->str (or (:table-name options) (ds/dataset-name dataset)))
+   (let [table-name (->str (or (:table-name options)
+                               (dataset->table-name dataset)))
          primary-keys (or (:primary-keys options)
                           (:primary-keys (meta dataset)))
          n-cols (ds/column-count dataset)
@@ -253,21 +340,25 @@
                            (interpose ", "
                                       (map ->str primary-keys))
                            [")"]))
-                 "\n);"))
-         statement (.createStatement conn)]
-     (with-open [stmt (.createStatement conn)]
-       (try
-         (.executeUpdate statement sql)
-         (.commit conn)
-         (catch Throwable e
-           (.rollback conn)
-           (throw (Exception. (format "Error executing:\n%s\n%s"
-                                      sql e))))))))
+                 "\n);"))]
+     (execute-update! conn sql)))
   ([conn dataset]
    (create-table! conn dataset {})))
 
 
+(defn ensure-table!
+  ([^Connection conn dataset options]
+   (if-not (table-exists? conn dataset)
+     (do
+       (create-table! conn dataset options)
+       true)
+     false))
+  ([^Connection conn dataset]
+   (ensure-table! conn dataset {})))
+
+
 (defn- as-bitmap ^RoaringBitmap [item] item)
+
 
 (defmacro add-pstmt-value
   [datatype stmt col-idx value]
@@ -281,7 +372,18 @@
     :float64 `(.setDouble ~stmt ~col-idx ~value)
     :string `(.setString ~stmt ~col-idx ~value)
     :local-date `(.setDate ~stmt ~col-idx (java.sql.Date/valueOf
-                                           (dtype-dt/as-local-date ~value)))))
+                                           (dtype-dt/as-local-date ~value)))
+    :local-date-time `(.setDate ~stmt ~col-idx
+                                (java.sql.Date.
+                                 (dtype-dt/local-date-time->milliseconds-since-epoch
+                                  (dtype-dt/as-local-date-time ~value))))))
+
+
+(defn- sql-type-index
+  ^long [datatype]
+  (case datatype
+    :boolean -7
+    :int8 ))
 
 
 (defmacro apply-pstmt-fn
@@ -289,10 +391,13 @@
   `(let [reader# (typecast/datatype->reader ~datatype ~reader)
          missing# (as-bitmap ~missing)
          stmt# ~stmt
-         col-idx# (unchecked-int ~col-idx)]
+         col-idx# (unchecked-int ~col-idx)
+         sql-type-index# (-> (.getParameterMetaData stmt#)
+                             (.getParameterType col-idx#))]
      (fn [^long row-idx#]
-       (when-not (.contains missing# (unchecked-int row-idx#))
-         (add-pstmt-value ~datatype stmt# col-idx# (.read reader# row-idx#))))))
+       (if-not (.contains missing# (unchecked-int row-idx#))
+         (add-pstmt-value ~datatype stmt# col-idx# (.read reader# row-idx#))
+         (.setNull stmt# col-idx# sql-type-index#)))))
 
 
 (defn make-prep-statement-applier
@@ -313,7 +418,8 @@
       :float32 (apply-pstmt-fn :float32 column-idx stmt rdr missing)
       :float64 (apply-pstmt-fn :float64 column-idx stmt rdr missing)
       :string (apply-pstmt-fn :string column-idx stmt rdr missing)
-      :local-date (apply-pstmt-fn :local-date column-idx stmt rdr missing))))
+      :local-date (apply-pstmt-fn :local-date column-idx stmt rdr missing)
+      :local-date-time (apply-pstmt-fn :local-date-time column-idx stmt rdr missing))))
 
 
 (defn db-insert-sql
@@ -322,8 +428,7 @@
         postgres-upsert-keys
         (or (:postgres-upsert-keys options)
             (when (:postgres-upsert? options)
-              (if-let [keyseq (seq
-                               (:primary-keys (meta dataset)))]
+              (if-let [keyseq (seq (:primary-keys (meta dataset)))]
                 keyseq
                 (throw (Exception. "Failed to find primary keys for upsert
 Expected dataset metadata to contain non-empty :primary-keys")))))]
@@ -358,9 +463,10 @@ Expected dataset metadata to contain non-empty :primary-keys")))))]
     (try
       (with-open [stmt (.prepareStatement conn sql)]
         (let [inserters (->> dataset
-                             (map-indexed (fn [idx col]
-                                            (make-prep-statement-applier
-                                             stmt idx col))))]
+                             (map-indexed
+                              (fn [idx col]
+                                (make-prep-statement-applier
+                                 stmt idx col))))]
           (dotimes [idx n-rows]
             (doseq [inserter inserters]
               (inserter idx))
