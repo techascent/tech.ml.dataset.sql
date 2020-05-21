@@ -1,6 +1,7 @@
 (ns tech.ml.dataset.sql-test
   (:require [tech.ml.dataset :as ds]
             [tech.ml.dataset.sql :as sql]
+            [tech.ml.dataset.sql.impl :as sql-impl]
             [tech.ml.dataset.column :as ds-col]
             [tech.v2.datatype.functional :as dfn]
             [tech.v2.datatype.casting :as casting]
@@ -10,7 +11,7 @@
   (:import [java.util UUID]))
 
 
-(def dev-conn* (delay (doto (-> (sql/jdbc-postgre-connect-str
+(def dev-conn* (delay (doto (-> (sql-impl/jdbc-postgre-connect-str
                                  "localhost:5432" "dev-user"
                                  "dev-user" "unsafe-bad-password")
                                 (jdbc/get-connection {:auto-commit false}))
@@ -48,8 +49,7 @@
                                    sql-stocks)]
         (is (= (ds/row-count sql-stocks)
                (ds/row-count stocks)))
-        (is (dfn/equals (stocks "price")
-                        (sql-stocks "price"))))
+        (is (dfn/equals (stocks "price") (sql-stocks "price"))))
       (finally
         (try
           (sql/drop-table! @dev-conn* stocks)
@@ -120,6 +120,30 @@
                 (is (= (vec src-rdr)
                        (vec dst-rdr))
                     (format "Object equals for column %s" cname)))))))
+      (finally
+        (try
+          (sql/drop-table! @dev-conn* test-ds)
+          (catch Throwable e nil))))))
+
+
+(deftest sql-uuid-test
+  (let [test-ds (ds/->dataset [{:a 1 :b (UUID/randomUUID)}
+                               {:b (UUID/randomUUID)}]
+                              {:dataset-name (uuid-table-name)})]
+    (try
+      (sql/create-table! @dev-conn* test-ds)
+      (sql/insert-dataset! @dev-conn* test-ds)
+      (let [sql-ds (sql/sql->dataset
+                    @dev-conn* (format "Select * from %s"
+                                       (ds/dataset-name test-ds)))]
+        (is (= (ds/row-count sql-ds)
+               (ds/row-count test-ds)))
+        (is (= (ds/missing test-ds)
+               (ds/missing sql-ds)))
+        (is (= (vec (test-ds :a))
+               (vec (sql-ds "a"))))
+        (is (= (vec (test-ds :b))
+               (vec (sql-ds "b")))))
       (finally
         (try
           (sql/drop-table! @dev-conn* test-ds)
