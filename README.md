@@ -20,7 +20,7 @@ Provided in namespace `tech.ml.dataset.sql`:
    to string and replace "-" with "_".
  * `table-exists?` - Return true of the table of this name exists.
  * `drop-table!` - Drop the table of this name.
- * `drop-table-when-exists?` - Drop the table if it exists.
+ * `drop-table-when-exists!` - Drop the table if it exists.
  * `create-table!` - Using a dataset for the table name for the column names and
     datatypes, create a new table.
  * `ensure-table!` - Ensure that a given table exists.
