@@ -35,6 +35,11 @@ Provided in namespace `tech.ml.dataset.sql`:
  provides many utility functions (like creating connection strings for postgresql
  servers) that may be helpful along with required helpers if you want to implement
  bindings to a different sql update/insert pathway.
+ 
+ 
+ Included in this repo is a nice, one-stop [docker pathway](scripts/start-local-postgres) 
+ for development purposes that will start the a server with the expected settings used  by 
+ the unit testing system.
 
 
 ## License
