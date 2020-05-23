@@ -277,7 +277,32 @@
       :local-date-time (apply-pstmt-fn :local-date-time column-idx stmt rdr missing))))
 
 
-(defn db-insert-sql
+(defn execute-prepared-statement-batches
+  [^Connection conn ^String sql dataset options]
+  (let [n-rows (ds/row-count dataset)
+        batch-size (long (or (:batch-size options) 32))]
+    (try
+      (with-open [stmt (.prepareStatement conn sql)]
+        (let [inserters (->> dataset
+                             (map-indexed
+                              (fn [idx col]
+                                (make-prep-statement-applier
+                                 stmt idx col))))]
+          (dotimes [idx n-rows]
+            (doseq [inserter inserters]
+              (inserter idx))
+            (.addBatch stmt)
+            (when (and (== 0 (rem idx batch-size))
+                       (not= 0 idx))
+              (.executeBatch stmt))))
+        (.executeBatch stmt))
+      (.commit conn)
+      (catch Throwable e
+        (.rollback conn)
+        (throw e)))))
+
+
+(defn insert-sql
   [dataset options]
   (let [table-name (->str (or (:table-name options) (ds/dataset-name dataset)))
         postgres-upsert-keys
@@ -311,26 +336,28 @@ Expected dataset metadata to contain non-empty :primary-keys")))))]
             [";"]))))
 
 
-(defn execute-prepared-statement-batches
-  [^Connection conn ^String sql dataset options]
-  (let [n-rows (ds/row-count dataset)
-        batch-size (long (or (:batch-size options) 32))]
-    (try
-      (with-open [stmt (.prepareStatement conn sql)]
-        (let [inserters (->> dataset
-                             (map-indexed
-                              (fn [idx col]
-                                (make-prep-statement-applier
-                                 stmt idx col))))]
-          (dotimes [idx n-rows]
-            (doseq [inserter inserters]
-              (inserter idx))
-            (.addBatch stmt)
-            (when (and (== 0 (rem idx batch-size))
-                       (not= 0 idx))
-              (.executeBatch stmt))))
-        (.executeBatch stmt))
-      (.commit conn)
-      (catch Throwable e
-        (.rollback conn)
-        (throw e)))))
+(defn create-sql
+  ([dataset table-name primary-key]
+   (let [n-cols (ds/column-count dataset)]
+     (apply str "CREATE TABLE "
+            table-name
+            " (\n"
+            (concat
+             (->> dataset
+                  (map-indexed (fn [idx column]
+                                 (let [colmeta (meta column)
+                                       colname (->str (:name colmeta))
+                                       col-dtype (datatype->sql-datatype
+                                                  (:datatype colmeta))]
+                                   (if-not (== idx (dec n-cols))
+                                     [" " colname " " col-dtype ",\n"]
+                                     [" " colname " " col-dtype]))))
+                  (apply concat))
+             (when (seq primary-key)
+               (concat [",\n PRIMARY KEY ("]
+                       (interpose ", " (map ->str primary-key))
+                       [")"]))
+             "\n);"))))
+  ([dataset]
+   (create-sql dataset (ds/dataset-name dataset)
+               (:primary-key (meta dataset)))))

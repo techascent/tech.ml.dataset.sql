@@ -1,27 +1,14 @@
 (ns tech.ml.dataset.sql
-  (:require [clojure.datafy :as datafy]
-            [clojure.data.json :as json]
-            [clojure.set :as set]
-            [next.jdbc :as jdbc]
-            [tech.v2.datatype.casting :as casting]
-            [tech.v2.datatype.bitmap :as bitmap]
-            [tech.v2.datatype.datetime :as dtype-dt]
-            [tech.v2.datatype.typecast :as typecast]
-            [tech.v2.datatype :as dtype]
+  (:require [tech.v2.datatype.bitmap :as bitmap]
             [tech.ml.dataset :as ds]
-            [tech.ml.dataset.column :as ds-col]
             [tech.ml.dataset.impl.dataset :as ds-impl]
             [tech.ml.dataset.impl.column :as col-impl]
             [tech.ml.dataset.sql.impl :as sql-impl])
   (:import [java.util List]
            [org.roaringbitmap RoaringBitmap]
            [java.time Instant]
-           [java.sql
-            Connection
-            ResultSetMetaData
-            PreparedStatement
-            DatabaseMetaData
-            ResultSet]))
+           [java.sql Connection ResultSetMetaData PreparedStatement
+            DatabaseMetaData ResultSet]))
 
 
 (set! *warn-on-reflection* true)
@@ -29,9 +16,9 @@
 
 (defn result-set->dataset
   "Given a result set, return a dataset.
-  options -
+  options:
   :close? - if true, then .close is called on the resultset - always - including when
-  there is an exception.  Defaults to true."
+    there is an exception.  Defaults to true."
   ([^ResultSet results {:keys [close?]
                         :or {close? true}
                         :as options}]
@@ -146,28 +133,7 @@
                          (string? primary-key) [primary-key]
                          (seq primary-key) primary-key
                          :else [primary-key]))
-         n-cols (ds/column-count dataset)
-         sql
-         (apply str "CREATE TABLE "
-                table-name
-                " (\n"
-                (concat
-                 (->> dataset
-                      (map-indexed (fn [idx column]
-                                     (let [colmeta (meta column)
-                                           colname (sql-impl/->str (:name colmeta))
-                                           col-dtype (sql-impl/datatype->sql-datatype
-                                                      (:datatype colmeta))]
-                                       (if-not (== idx (dec n-cols))
-                                         [" " colname " " col-dtype ",\n"]
-                                         [" " colname " " col-dtype]))))
-                      (apply concat))
-                 (when (seq primary-key)
-                   (concat [",\n PRIMARY KEY ("]
-                           (interpose ", "
-                                      (map sql-impl/->str primary-key))
-                           [")"]))
-                 "\n);"))]
+         sql (sql-impl/create-sql dataset table-name primary-key)]
      (sql-impl/execute-update! conn sql)))
   ([conn dataset]
    (create-table! conn dataset {})))
@@ -192,7 +158,7 @@
   that affects an upsert operation."
   ([^Connection conn dataset options]
    (sql-impl/execute-prepared-statement-batches
-    conn (sql-impl/db-insert-sql dataset options) dataset options))
+    conn (sql-impl/insert-sql dataset options) dataset options))
   ([conn dataset]
    (insert-dataset! conn dataset {})))
 
