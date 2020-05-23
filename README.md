@@ -117,7 +117,7 @@ stocks [5 3]:
 |   MSFT | 2000-05-01 | 25.45 |
 ```
 
-Note that local-dates are converted to instancts in UTC.  The same is true for all
+Note that local-dates are converted to instants in UTC.  The same is true for all
 date/time types; all are just converted to java.sql.Date objects.  Numeric datatypes,
 date/time types, strings and UUID's are supported datatypes.
 
