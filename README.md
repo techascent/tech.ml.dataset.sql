@@ -1,5 +1,8 @@
 # tech.ml.dataset.sql
 
+[![Clojars Project](https://img.shields.io/clojars/v/techascent/tech.ml.dataset.sql.svg)](https://clojars.org/techascent/tech.ml.dataset.sql)
+
+
 Minimal SQL bindings for
 [`tech.ml.dataset`](https://github.com/techascent/tech.ml.dataset).
 
