@@ -29,7 +29,9 @@
   (merge
    {"java.lang.String" :string
     "java.lang.Boolean" :boolean
-    "java.sql.Date" :instant
+    "java.sql.Time" :duration
+    "java.sql.Date" :local-date
+    "java.sql.Timestamp" :instant
     "java.util.UUID" :uuid}
    (->> casting/host-numeric-types
         (map (fn [dtype]
@@ -66,8 +68,20 @@
 (defn- as-result-set ^ResultSet [rs] rs)
 
 
-(defn- sql-date->instant
-  ^Instant [^java.sql.Date date]
+(defn- sql-time->duration
+  ^java.time.Duration [^java.sql.Time time]
+  (dtype-dt/milliseconds->duration
+   (.getTime time)))
+
+
+(defn- sql-date->local-date
+  ^java.time.LocalDate [^java.sql.Date date]
+  (dtype-dt/milliseconds-since-epoch->local-date
+   (.getTime date)))
+
+
+(defn- sql-timestamp->instant
+  ^Instant [^java.sql.Timestamp date]
   (dtype-dt/milliseconds-since-epoch->instant
    (.getTime date)))
 
@@ -84,8 +98,12 @@
     :float32 `(.getFloat ~results ~idx)
     :float64 `(.getDouble ~results ~idx)
     :uuid `(.getObject ~results ~idx UUID)
-    :instant `(-> (.getDate ~results ~idx)
-                  (sql-date->instant))))
+    :duration `(-> (.getTime ~results ~idx)
+                   (sql-time->duration))
+    :local-date `(-> (.getDate ~results ~idx)
+                     (sql-date->local-date))
+    :instant `(-> (.getTimestamp ~results ~idx)
+                  (sql-timestamp->instant))))
 
 
 (defn- as-list ^List [item] item)
@@ -138,6 +156,10 @@
                              missing missing-value idx)
       :float64 (impl-read-fn :float64 results container
                              missing missing-value idx)
+      :duration (impl-read-fn :duration results container
+                              missing missing-value idx)
+      :local-date (impl-read-fn :local-date results container
+                                missing missing-value idx)
       :instant (impl-read-fn :instant results container
                              missing missing-value idx))))
 
@@ -172,9 +194,10 @@
       :string "varchar"
       :uuid "uuid"
       :local-date "date"
-      :local-date-time "date"
-      :zoned-date-time "date"
-      :instant "date"]
+      :local-date-time "timestamp"
+      :zoned-date-time "timestamp"
+      :instant "timestamp"
+      :duration "time"]
      (partition 2)
      (map (partial apply add-datatype-mapping))
      (dorun))
@@ -220,6 +243,10 @@
 (defn- as-bitmap ^RoaringBitmap [item] item)
 
 
+(defn as-zoned-date-time
+  ^"java.time.ZonedDateTime" [item] item)
+
+
 (defmacro ^:private add-pstmt-value
   [datatype stmt col-idx value]
   (case datatype
@@ -232,12 +259,23 @@
     :float64 `(.setDouble ~stmt ~col-idx ~value)
     :string `(.setString ~stmt ~col-idx ~value)
     :uuid `(.setObject ~stmt ~col-idx ~value)
+    :duration `(.setTime ~stmt ~col-idx
+                         (java.sql.Time.
+                          (dtype-dt/duration->milliseconds ~value)))
     :local-date `(.setDate ~stmt ~col-idx (java.sql.Date/valueOf
                                            (dtype-dt/as-local-date ~value)))
-    :local-date-time `(.setDate ~stmt ~col-idx
-                                (java.sql.Date.
+    :local-date-time `(.setTimestamp ~stmt ~col-idx
+                                (java.sql.Timestamp.
                                  (dtype-dt/local-date-time->milliseconds-since-epoch
-                                  (dtype-dt/as-local-date-time ~value))))))
+                                  (dtype-dt/as-local-date-time ~value))))
+    :zoned-date-time `(.setTimestamp ~stmt ~col-idx
+                                (java.sql.Timestamp.
+                                 (dtype-dt/zoned-date-time->milliseconds-since-epoch
+                                  ~value)))
+    :instant `(.setTimestamp ~stmt ~col-idx
+                        (java.sql.Timestamp.
+                         (dtype-dt/instant->milliseconds-since-epoch
+                          ~value)))))
 
 
 (defmacro apply-pstmt-fn
@@ -272,9 +310,12 @@
       :float32 (apply-pstmt-fn :float32 column-idx stmt rdr missing)
       :float64 (apply-pstmt-fn :float64 column-idx stmt rdr missing)
       :string (apply-pstmt-fn :string column-idx stmt rdr missing)
+      :duration (apply-pstmt-fn :duration column-idx stmt rdr missing)
       :uuid (apply-pstmt-fn :uuid column-idx stmt rdr missing)
       :local-date (apply-pstmt-fn :local-date column-idx stmt rdr missing)
-      :local-date-time (apply-pstmt-fn :local-date-time column-idx stmt rdr missing))))
+      :local-date-time (apply-pstmt-fn :local-date-time column-idx stmt rdr missing)
+      :zoned-date-time (apply-pstmt-fn :zoned-date-time column-idx stmt rdr missing)
+      :instant (apply-pstmt-fn :instant column-idx stmt rdr missing))))
 
 
 (defn execute-prepared-statement-batches

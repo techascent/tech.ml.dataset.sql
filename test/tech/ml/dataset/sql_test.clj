@@ -5,6 +5,7 @@
             [tech.ml.dataset.column :as ds-col]
             [tech.v2.datatype.functional :as dfn]
             [tech.v2.datatype.casting :as casting]
+            [tech.v2.datatype.datetime :as dtype-dt]
             [tech.v2.datatype :as dtype]
             [next.jdbc :as jdbc]
             [clojure.test :refer [deftest is]])
@@ -27,12 +28,11 @@
 
 
 (deftest stocks-dataset
-  (let [stocks (ds/->dataset "test/data/stocks.csv")
-        table-name (uuid-table-name)
-        stocks (with-meta stocks
-                 (assoc (meta stocks)
-                        :name table-name
-                        :primary-keys ["date" "symbol"]))]
+  (let [table-name (uuid-table-name)
+        stocks (-> (ds/->dataset "test/data/stocks.csv")
+                   (vary-meta assoc
+                              :name table-name
+                              :primary-keys ["date" "symbol"]))]
     (try
       (sql/create-table! @dev-conn* stocks)
       (sql/insert-dataset! @dev-conn* stocks)
@@ -143,6 +143,56 @@
         (is (= (vec (test-ds :a))
                (vec (sql-ds "a"))))
         (is (= (vec (test-ds :b))
+               (vec (sql-ds "b")))))
+      (finally
+        (try
+          (sql/drop-table! @dev-conn* test-ds)
+          (catch Throwable e nil))))))
+
+
+(deftest zoned-date-time
+  (let [test-ds (ds/->dataset [{:a 1 :b (dtype-dt/zoned-date-time)}
+                               {:a 2 :b (dtype-dt/zoned-date-time)}]
+                              {:dataset-name (uuid-table-name)})]
+
+    (try
+      (sql/create-table! @dev-conn* test-ds)
+      (sql/insert-dataset! @dev-conn* test-ds)
+      (let [sql-ds (sql/sql->dataset
+                    @dev-conn* (format "Select * from %s"
+                                       (ds/dataset-name test-ds)))]
+        (is (= (ds/row-count sql-ds)
+               (ds/row-count test-ds)))
+        (is (= (ds/missing test-ds)
+               (ds/missing sql-ds)))
+        (is (= (vec (test-ds :a))
+               (vec (sql-ds "a"))))
+        (is (= (vec (map dtype-dt/zoned-date-time->instant (test-ds :b)))
+               (vec (sql-ds "b")))))
+      (finally
+        (try
+          (sql/drop-table! @dev-conn* test-ds)
+          (catch Throwable e nil))))))
+
+
+(deftest duration
+  (let [test-ds (ds/->dataset [{:a 1 :b (dtype-dt/milliseconds->duration 400)}
+                               {:a 2 :b (dtype-dt/milliseconds->duration 10000)}]
+                              {:dataset-name (uuid-table-name)})]
+
+    (try
+      (sql/create-table! @dev-conn* test-ds)
+      (sql/insert-dataset! @dev-conn* test-ds)
+      (let [sql-ds (sql/sql->dataset
+                    @dev-conn* (format "Select * from %s"
+                                       (ds/dataset-name test-ds)))]
+        (is (= (ds/row-count sql-ds)
+               (ds/row-count test-ds)))
+        (is (= (ds/missing test-ds)
+               (ds/missing sql-ds)))
+        (is (= (vec (test-ds :a))
+               (vec (sql-ds "a"))))
+        (is (= (vec (dtype-dt/unpack (test-ds :b)))
                (vec (sql-ds "b")))))
       (finally
         (try
