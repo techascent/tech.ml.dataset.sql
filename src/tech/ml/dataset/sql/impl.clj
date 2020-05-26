@@ -71,7 +71,9 @@
 (defn- sql-time->duration
   ^java.time.Duration [^java.sql.Time time]
   (dtype-dt/milliseconds->duration
-   (.getTime time)))
+   ;;On postgres times are coming back as jan 2nd, not jan 1st.
+   (rem (.getTime time)
+        (dtype-dt/milliseconds-in-day))))
 
 
 (defn- sql-date->local-date
@@ -259,9 +261,9 @@
     :float64 `(.setDouble ~stmt ~col-idx ~value)
     :string `(.setString ~stmt ~col-idx ~value)
     :uuid `(.setObject ~stmt ~col-idx ~value)
-    :duration `(.setTime ~stmt ~col-idx
-                         (java.sql.Time.
-                          (dtype-dt/duration->milliseconds ~value)))
+    :duration `(let [tt# (java.sql.Time.
+                          (dtype-dt/duration->milliseconds ~value))]
+                 (.setTime ~stmt ~col-idx tt#))
     :local-date `(.setDate ~stmt ~col-idx (java.sql.Date/valueOf
                                            (dtype-dt/as-local-date ~value)))
     :local-date-time `(.setTimestamp ~stmt ~col-idx

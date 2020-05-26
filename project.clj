@@ -1,4 +1,4 @@
-(defproject techascent/tech.ml.dataset.sql "0.3-SNAPSHOT"
+(defproject techascent/tech.ml.dataset.sql "0.3"
   :description "SQL bindings for tech.ml.dataset"
   :url "https://github.com/techascent/tech.ml.dataset.sql"
   :license {:name "EPL-2.0"
