@@ -192,7 +192,7 @@
       :int32 "integer"
       :int64 "bigint"
       :float32 "float"
-      :float64 "double"
+      :float64 "double precision"
       :string "varchar"
       :uuid "uuid"
       :local-date "date"
