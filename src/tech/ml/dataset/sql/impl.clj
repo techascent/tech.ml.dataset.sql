@@ -326,7 +326,7 @@
         batch-size (long (or (:batch-size options) 32))]
     (try
       (with-open [stmt (.prepareStatement conn sql)]
-        (let [inserters (->> dataset
+        (let [inserters (->> (ds/columns dataset)
                              (map-indexed
                               (fn [idx col]
                                 (make-prep-statement-applier
@@ -358,7 +358,7 @@ Expected dataset metadata to contain non-empty :primary-keys")))))]
     (apply str
            "INSERT INTO " table-name "( "
            (concat
-            (->> dataset
+            (->> (ds/columns dataset)
                  (map #(->str (:name (meta %))))
                  (interpose ", "))
             [") VALUES ("]
@@ -386,7 +386,7 @@ Expected dataset metadata to contain non-empty :primary-keys")))))]
             table-name
             " (\n"
             (concat
-             (->> dataset
+             (->> (ds/columns dataset)
                   (map-indexed (fn [idx column]
                                  (let [colmeta (meta column)
                                        colname (->str (:name colmeta))

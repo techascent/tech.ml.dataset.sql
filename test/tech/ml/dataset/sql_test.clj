@@ -99,7 +99,7 @@
                                              (ds/dataset-name test-ds)))]
         (is (= (ds/row-count test-ds)
                (ds/row-count sql-ds)))
-        (doseq [col test-ds]
+        (doseq [col (ds/columns test-ds)]
           (let [cname (ds-col/column-name col)
                 sql-col (sql-ds cname)
                 col-dtype (dtype/get-datatype col)
