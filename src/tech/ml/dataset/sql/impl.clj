@@ -1,4 +1,4 @@
-(ns tech.ml.dataset.sql.impl
+(ns ^:no-doc tech.ml.dataset.sql.impl
   (:require [tech.v2.datatype :as dtype]
             [tech.v2.datatype.casting :as casting]
             [tech.v2.datatype.typecast :as typecast]
