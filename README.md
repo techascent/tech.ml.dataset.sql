@@ -2,6 +2,7 @@
 
 [![Clojars Project](https://img.shields.io/clojars/v/techascent/tech.ml.dataset.sql.svg)](https://clojars.org/techascent/tech.ml.dataset.sql)
 
+[![cljdoc badge](https://cljdoc.org/badge/techascent/tech.ml.dataset.sql)](https://cljdoc.org/d/techascent/tech.ml.dataset.sql/CURRENT)
 
 Minimal SQL bindings for
 [`tech.ml.dataset`](https://github.com/techascent/tech.ml.dataset).
