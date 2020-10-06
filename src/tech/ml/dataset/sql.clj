@@ -25,10 +25,10 @@
    (try
      (let [columns (->> (sql-impl/result-set-metadata->data (.getMetaData results))
                         (map-indexed
-                         (fn [idx {:keys [datatype name]}]
+                         (fn [idx {:keys [datatype name label]}]
                            (let [container (col-impl/make-container datatype)
                                  missing (bitmap/->bitmap)]
-                             {:name name
+                             {:name label
                               :datatype datatype
                               :data container
                               :missing missing
@@ -151,13 +151,48 @@
    (ensure-table! conn dataset {})))
 
 
+
+(defn execute-prepared-statement-batches
+  [^Connection conn stmt-or-sql dataset options]
+  (let [n-rows (ds/row-count dataset)
+        batch-size (long (or (:batch-size options) 32))]
+    (try
+      (with-open [^PreparedStatement stmt
+                  (cond
+                    (instance? PreparedStatement stmt-or-sql)
+                    stmt-or-sql
+                    (string? stmt-or-sql)
+                    (.prepareStatement conn ^String stmt-or-sql)
+                    :else
+                    (throw (Exception.
+                            (format "Arg must either be sql or statement: %s"
+                                    stmt-or-sql))))]
+        (let [inserters (->> (ds/columns dataset)
+                             (map-indexed
+                              (fn [idx col]
+                                (sql-impl/make-prep-statement-applier
+                                 stmt idx col))))]
+          (dotimes [idx n-rows]
+            (doseq [inserter inserters]
+              (inserter idx))
+            (.addBatch stmt)
+            (when (and (== 0 (rem idx batch-size))
+                       (not= 0 idx))
+              (.executeBatch stmt))))
+        (.executeBatch stmt))
+      (.commit conn)
+      (catch Throwable e
+        (.rollback conn)
+        (throw e)))))
+
+
 (defn insert-dataset!
   "Insert a dataset into a table indicated by the dataset name.
   options
   :postgres-upsert? - defaults to false.  When true, generates postgres-specific sql
   that affects an upsert operation."
   ([^Connection conn dataset options]
-   (sql-impl/execute-prepared-statement-batches
+   (execute-prepared-statement-batches
     conn (sql-impl/insert-sql dataset options) dataset options))
   ([conn dataset]
    (insert-dataset! conn dataset {})))

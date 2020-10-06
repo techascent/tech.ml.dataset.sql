@@ -320,31 +320,6 @@
       :instant (apply-pstmt-fn :instant column-idx stmt rdr missing))))
 
 
-(defn execute-prepared-statement-batches
-  [^Connection conn ^String sql dataset options]
-  (let [n-rows (ds/row-count dataset)
-        batch-size (long (or (:batch-size options) 32))]
-    (try
-      (with-open [stmt (.prepareStatement conn sql)]
-        (let [inserters (->> (ds/columns dataset)
-                             (map-indexed
-                              (fn [idx col]
-                                (make-prep-statement-applier
-                                 stmt idx col))))]
-          (dotimes [idx n-rows]
-            (doseq [inserter inserters]
-              (inserter idx))
-            (.addBatch stmt)
-            (when (and (== 0 (rem idx batch-size))
-                       (not= 0 idx))
-              (.executeBatch stmt))))
-        (.executeBatch stmt))
-      (.commit conn)
-      (catch Throwable e
-        (.rollback conn)
-        (throw e)))))
-
-
 (defn insert-sql
   [dataset options]
   (let [table-name (->str (or (:table-name options) (ds/dataset-name dataset)))
