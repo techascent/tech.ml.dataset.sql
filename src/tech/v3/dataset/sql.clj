@@ -18,8 +18,10 @@
 
 (defn result-set->dataset
   "Given a result set, return a dataset.
-  options:
-  :close? - if true, then .close is called on the resultset - always - including when
+
+  Options:
+
+  * `:close?` - if true, then .close is called on the resultset - always - including when
     there is an exception.  Defaults to true."
   ([^ResultSet results {:keys [close?]
                         :or {close? true}
@@ -53,8 +55,7 @@
 
 (defn sql->dataset
   "Given a connection and an sql statement, convert the results of executing the
-  statement to a dataset.
-  For options, see result-set->dataset"
+  statement to a dataset. For options, see `result-set->dataset`"
   ([^Connection conn sql options]
    (try
      (with-open [statement (.createStatement conn)]
@@ -83,8 +84,8 @@
 (defn table-exists?
   "Test if a table exists.
 
-  conn - java.sql.Connection
-  dataset - string, keyword, symbol, or dataset."
+  * conn - java.sql.Connection
+  * dataset - string, keyword, symbol, or dataset"
   [conn dataset]
   (try
     (sql->dataset conn (format "Select COUNT(*) from %s where 1 = 0"
@@ -97,8 +98,8 @@
 (defn drop-table!
   "Drop a table.  Exception upon failure to drop the table.
 
-  conn - java.sql.Connection
-  dataset - string, keyword, symbol, or dataset."
+  * conn - java.sql.Connection
+  * dataset - string, keyword, symbol, or dataset"
   [conn dataset]
   (sql-impl/execute-update! conn (format "DROP TABLE %s"
                                          (sql-impl/dataset->table-name dataset))))
@@ -114,7 +115,7 @@
 (defn create-table!
   "Create a table.  Exception upon failure to drop the table.
 
-  -  conn - java.sql.Connection
+  - conn - java.sql.Connection
   - dataset - dataset to use.  The dataset-name will be used as the table-name and the
      column names and datatypes will be used for the sql names and datatypes.
 
@@ -157,6 +158,19 @@
 
 
 (defn execute-prepared-statement-batches
+  "Internal method to, using a dataset, execute prepared statement batches
+  drawn from the rows of the dataset.  For this to work correctly, the
+  connection needs to have autoCommit set to false.
+
+  * conn - java.sql.Connection
+  * stmt-or-sql - Either a prepared statement or a string in which case
+    the connection's .prepareStatement method will be called.
+  * dataset - dataset
+
+  Options
+
+  - batch-size - integer, defaults to 32
+  "
   [^Connection conn stmt-or-sql dataset options]
   (let [n-rows (ds/row-count dataset)
         batch-size (long (or (:batch-size options) 32))]
@@ -193,7 +207,7 @@
 (defn insert-dataset!
   "Insert a dataset into a table indicated by the dataset name.
 
-  Options:
+Options:
 
   - `:postgres-upsert?` - defaults to false.  When true, generates postgres-specific sql
      that performs an upsert operation."
