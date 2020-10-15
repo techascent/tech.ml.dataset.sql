@@ -1,17 +1,17 @@
-(ns ^:no-doc tech.ml.dataset.sql.impl
-  (:require [tech.v2.datatype :as dtype]
-            [tech.v2.datatype.casting :as casting]
-            [tech.v2.datatype.typecast :as typecast]
-            [tech.v2.datatype.datetime :as dtype-dt]
-            [tech.ml.dataset :as ds]
-            [tech.ml.dataset.column :as ds-col]
-            [tech.ml.dataset.impl.column :as col-impl]
+(ns ^:no-doc tech.v3.dataset.sql.impl
+  (:require [tech.v3.datatype :as dtype]
+            [tech.v3.datatype.casting :as casting]
+            [tech.v3.datatype.datetime :as dtype-dt]
+            [tech.v3.datatype.packing :as packing]
+            [tech.v3.dataset :as ds]
+            [tech.v3.dataset.column :as ds-col]
+            [tech.v3.dataset.impl.column-base :as col-base]
             [clojure.set :as set])
   (:import [java.sql Connection ResultSetMetaData PreparedStatement DatabaseMetaData
             ResultSet]
            [java.util List UUID]
            [org.roaringbitmap RoaringBitmap]
-           [java.time Instant]))
+           [java.time Instant LocalDate LocalDateTime ZonedDateTime]))
 
 
 (set! *warn-on-reflection* true)
@@ -73,7 +73,7 @@
   (dtype-dt/milliseconds->duration
    ;;On postgres times are coming back as jan 2nd, not jan 1st.
    (rem (.getTime time)
-        (dtype-dt/milliseconds-in-day))))
+        dtype-dt/milliseconds-in-day)))
 
 
 (defn- sql-date->local-date
@@ -137,7 +137,7 @@
   (let [results (as-result-set results)
         idx (long idx)
         ^RoaringBitmap missing missing
-        missing-value (col-impl/datatype->missing-value datatype)]
+        missing-value (col-base/datatype->missing-value datatype)]
     ;;conversion of datatype from runtime to compile time
     (case datatype
       :boolean (impl-read-fn :boolean results container
@@ -207,8 +207,8 @@
 
 (defn datatype->sql-datatype
   [dtype]
-  (let [dtype (if (dtype-dt/packed-datatype? dtype)
-                (dtype-dt/packed-type->unpacked-type dtype)
+  (let [dtype (if (packing/packed-datatype? dtype)
+                (packing/unpack-datatype dtype)
                 (casting/un-alias-datatype dtype))]
     (if-let [retval (get @datatype->sql-datatype-map dtype)]
       retval
@@ -242,82 +242,82 @@
     (->str (ds/dataset-name dataset))))
 
 
-(defn- as-bitmap ^RoaringBitmap [item] item)
-
-
-(defn as-zoned-date-time
-  ^"java.time.ZonedDateTime" [item] item)
+(defn- as-local-date ^LocalDate [item] item)
+(defn- as-local-date-time ^LocalDateTime [item] item)
 
 
 (defmacro ^:private add-pstmt-value
-  [datatype stmt col-idx value]
+  [datatype stmt col-idx rdr row-idx]
   (case datatype
-    :boolean `(.setBoolean ~stmt ~col-idx ~value)
-    :int8 `(.setByte ~stmt ~col-idx ~value)
-    :int16 `(.setShort ~stmt ~col-idx ~value)
-    :int32 `(.setInt ~stmt ~col-idx ~value)
-    :int64 `(.setLong ~stmt ~col-idx ~value)
-    :float32 `(.setFloat ~stmt ~col-idx ~value)
-    :float64 `(.setDouble ~stmt ~col-idx ~value)
-    :string `(.setString ~stmt ~col-idx ~value)
-    :uuid `(.setObject ~stmt ~col-idx ~value)
+    :boolean `(.setBoolean ~stmt ~col-idx (.readBoolean ~rdr ~row-idx))
+    :int8 `(.setByte ~stmt ~col-idx (.readByte ~rdr ~row-idx))
+    :int16 `(.setShort ~stmt ~col-idx (.readShort ~rdr ~row-idx))
+    :int32 `(.setInt ~stmt ~col-idx (.readInt ~rdr ~row-idx))
+    :int64 `(.setLong ~stmt ~col-idx (.readLong ~rdr ~row-idx))
+    :float32 `(.setFloat ~stmt ~col-idx (.readFloat ~rdr ~row-idx))
+    :float64 `(.setDouble ~stmt ~col-idx (.readDouble ~rdr ~row-idx))
+    :string `(.setString ~stmt ~col-idx (.readObject ~rdr ~row-idx))
+    :uuid `(.setObject ~stmt ~col-idx (.readObject ~rdr ~row-idx))
     :duration `(let [tt# (java.sql.Time.
-                          (dtype-dt/duration->milliseconds ~value))]
+                          (dtype-dt/datetime->milliseconds
+                           (.readObject ~rdr ~row-idx)))]
                  (.setTime ~stmt ~col-idx tt#))
     :local-date `(.setDate ~stmt ~col-idx (java.sql.Date/valueOf
-                                           (dtype-dt/as-local-date ~value)))
+                                           (as-local-date
+                                            (.readObject ~rdr ~row-idx))))
     :local-date-time `(.setTimestamp ~stmt ~col-idx
                                 (java.sql.Timestamp.
                                  (dtype-dt/local-date-time->milliseconds-since-epoch
-                                  (dtype-dt/as-local-date-time ~value))))
+                                  (as-local-date-time
+                                   (.readObject ~rdr ~row-idx)))))
     :zoned-date-time `(.setTimestamp ~stmt ~col-idx
                                 (java.sql.Timestamp.
                                  (dtype-dt/zoned-date-time->milliseconds-since-epoch
-                                  ~value)))
+                                  (.readObject ~rdr ~row-idx))))
     :instant `(.setTimestamp ~stmt ~col-idx
                         (java.sql.Timestamp.
                          (dtype-dt/instant->milliseconds-since-epoch
-                          ~value)))))
+                          (.readObject ~rdr ~row-idx))))))
 
 
 (defmacro apply-pstmt-fn
-  [datatype col-idx stmt reader missing]
-  `(let [reader# (typecast/datatype->reader ~datatype ~reader)
-         missing# (as-bitmap ~missing)
-         stmt# ~stmt
-         col-idx# (unchecked-int ~col-idx)
-         sql-type-index# (-> (.getParameterMetaData stmt#)
-                             (.getParameterType col-idx#))]
-     (fn [^long row-idx#]
-       (if-not (.contains missing# (unchecked-int row-idx#))
-         (add-pstmt-value ~datatype stmt# col-idx# (.read reader# row-idx#))
-         (.setNull stmt# col-idx# sql-type-index#)))))
+  [datatype col-idx stmt reader missing sql-type-idx]
+  `(fn [^long row-idx#]
+     (if-not (.contains ~missing (unchecked-int row-idx#))
+       (add-pstmt-value ~datatype ~stmt ~col-idx ~reader row-idx#)
+       (.setNull ~stmt ~col-idx ~sql-type-idx))))
 
 
 (defn make-prep-statement-applier
   [^PreparedStatement stmt column-idx col]
   (let [^RoaringBitmap missing (ds-col/missing col)
         dtype (dtype/get-datatype col)
-        [dtype rdr] (if (dtype-dt/packed-datatype? dtype)
-                      (let [new-rdr (dtype-dt/unpack col)]
+        [dtype rdr] (if (packing/packed-datatype? dtype)
+                      (let [new-rdr (packing/unpack col)]
                         [(dtype/get-datatype new-rdr) new-rdr])
                       [dtype (dtype/->reader col)])
-        column-idx (unchecked-int (inc column-idx))]
+        column-idx (unchecked-int (inc column-idx))
+        rdr (dtype/->reader rdr)
+        column-idx (int column-idx)
+        sql-type-index (-> (.getParameterMetaData stmt)
+                           (.getParameterType column-idx))]
     (case dtype
-      :boolean (apply-pstmt-fn :boolean column-idx stmt rdr missing)
-      :int8 (apply-pstmt-fn :int8 column-idx stmt rdr missing)
-      :int16 (apply-pstmt-fn :int16 column-idx stmt rdr missing)
-      :int32 (apply-pstmt-fn :int32 column-idx stmt rdr missing)
-      :int64 (apply-pstmt-fn :int64 column-idx stmt rdr missing)
-      :float32 (apply-pstmt-fn :float32 column-idx stmt rdr missing)
-      :float64 (apply-pstmt-fn :float64 column-idx stmt rdr missing)
-      :string (apply-pstmt-fn :string column-idx stmt rdr missing)
-      :duration (apply-pstmt-fn :duration column-idx stmt rdr missing)
-      :uuid (apply-pstmt-fn :uuid column-idx stmt rdr missing)
-      :local-date (apply-pstmt-fn :local-date column-idx stmt rdr missing)
-      :local-date-time (apply-pstmt-fn :local-date-time column-idx stmt rdr missing)
-      :zoned-date-time (apply-pstmt-fn :zoned-date-time column-idx stmt rdr missing)
-      :instant (apply-pstmt-fn :instant column-idx stmt rdr missing))))
+      :boolean (apply-pstmt-fn :boolean column-idx stmt rdr missing sql-type-index)
+      :int8 (apply-pstmt-fn :int8 column-idx stmt rdr missing sql-type-index)
+      :int16 (apply-pstmt-fn :int16 column-idx stmt rdr missing sql-type-index)
+      :int32 (apply-pstmt-fn :int32 column-idx stmt rdr missing sql-type-index)
+      :int64 (apply-pstmt-fn :int64 column-idx stmt rdr missing sql-type-index)
+      :float32 (apply-pstmt-fn :float32 column-idx stmt rdr missing sql-type-index)
+      :float64 (apply-pstmt-fn :float64 column-idx stmt rdr missing sql-type-index)
+      :string (apply-pstmt-fn :string column-idx stmt rdr missing sql-type-index)
+      :duration (apply-pstmt-fn :duration column-idx stmt rdr missing sql-type-index)
+      :uuid (apply-pstmt-fn :uuid column-idx stmt rdr missing sql-type-index)
+      :local-date (apply-pstmt-fn :local-date column-idx stmt rdr missing sql-type-index)
+      :local-date-time (apply-pstmt-fn :local-date-time column-idx stmt rdr missing
+                                       sql-type-index)
+      :zoned-date-time (apply-pstmt-fn :zoned-date-time column-idx stmt rdr missing
+                                       sql-type-index)
+      :instant (apply-pstmt-fn :instant column-idx stmt rdr missing sql-type-index))))
 
 
 (defn insert-sql

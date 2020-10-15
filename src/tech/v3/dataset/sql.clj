@@ -1,9 +1,11 @@
-(ns tech.ml.dataset.sql
-  (:require [tech.v2.datatype.bitmap :as bitmap]
-            [tech.ml.dataset :as ds]
-            [tech.ml.dataset.impl.dataset :as ds-impl]
-            [tech.ml.dataset.impl.column :as col-impl]
-            [tech.ml.dataset.sql.impl :as sql-impl])
+(ns tech.v3.dataset.sql
+  "Pathways to transform dataset to and from SQL databases.  Built directly on
+  java.sql interfaces."
+  (:require [tech.v3.datatype.bitmap :as bitmap]
+            [tech.v3.dataset :as ds]
+            [tech.v3.dataset.impl.dataset :as ds-impl]
+            [tech.v3.dataset.impl.column-base :as col-base]
+            [tech.v3.dataset.sql.impl :as sql-impl])
   (:import [java.util List]
            [org.roaringbitmap RoaringBitmap]
            [java.time Instant]
@@ -26,7 +28,7 @@
      (let [columns (->> (sql-impl/result-set-metadata->data (.getMetaData results))
                         (map-indexed
                          (fn [idx {:keys [datatype name label]}]
-                           (let [container (col-impl/make-container datatype)
+                           (let [container (col-base/make-container datatype)
                                  missing (bitmap/->bitmap)]
                              {:name label
                               :datatype datatype
@@ -112,16 +114,18 @@
 (defn create-table!
   "Create a table.  Exception upon failure to drop the table.
 
-  conn - java.sql.Connection
-  dataset - dataset to use.  The dataset-name will be used as the table-name and the
+  -  conn - java.sql.Connection
+  - dataset - dataset to use.  The dataset-name will be used as the table-name and the
      column names and datatypes will be used for the sql names and datatypes.
+
   The dataset's dataset-name will be used for the table and if the dataset's metadata
   has a :primary-key member this will be interpreted as a sequence of column names
   to be used as the primary key.
 
-  options
-  :table-name - set the name of the table to use.  Overrides the dataset metadata.
-  :primary-key - Array of column names to use as the primary key of this table.
+  Options:
+
+  * `:table-name` - set the name of the table to use.  Overrides the dataset metadata.
+  * `:primary-key` - Array of column names to use as the primary key of this table.
      Overrides the dataset metadata."
   ([^Connection conn dataset options]
    (let [table-name (sql-impl/->str (or (:table-name options)
@@ -188,9 +192,11 @@
 
 (defn insert-dataset!
   "Insert a dataset into a table indicated by the dataset name.
-  options
-  :postgres-upsert? - defaults to false.  When true, generates postgres-specific sql
-  that affects an upsert operation."
+
+  Options:
+
+  - `:postgres-upsert?` - defaults to false.  When true, generates postgres-specific sql
+     that performs an upsert operation."
   ([^Connection conn dataset options]
    (execute-prepared-statement-batches
     conn (sql-impl/insert-sql dataset options) dataset options))

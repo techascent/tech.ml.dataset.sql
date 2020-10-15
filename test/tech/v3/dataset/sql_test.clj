@@ -1,12 +1,12 @@
-(ns tech.ml.dataset.sql-test
-  (:require [tech.ml.dataset :as ds]
-            [tech.ml.dataset.sql :as sql]
-            [tech.ml.dataset.sql.impl :as sql-impl]
-            [tech.ml.dataset.column :as ds-col]
-            [tech.v2.datatype.functional :as dfn]
-            [tech.v2.datatype.casting :as casting]
-            [tech.v2.datatype.datetime :as dtype-dt]
-            [tech.v2.datatype :as dtype]
+(ns tech.v3.dataset.sql-test
+  (:require [tech.v3.dataset :as ds]
+            [tech.v3.dataset.sql :as sql]
+            [tech.v3.dataset.sql.impl :as sql-impl]
+            [tech.v3.dataset.column :as ds-col]
+            [tech.v3.datatype.functional :as dfn]
+            [tech.v3.datatype.casting :as casting]
+            [tech.v3.datatype.datetime :as dtype-dt]
+            [tech.v3.datatype :as dtype]
             [next.jdbc :as jdbc]
             [clojure.test :refer [deftest is]])
   (:import [java.util UUID]))
@@ -39,14 +39,14 @@
       (let [sql-stocks (sql/sql->dataset
                         @dev-conn* (format "Select * from %s"
                                            table-name))
-            stocks (ds/sort-by #(vector
+            stocks (ds/sort-by stocks
+                               #(vector
                                  (get % "date")
-                                 (get % "symbol"))
-                               stocks)
-            sql-stocks (ds/sort-by #(vector
+                                 (get % "symbol")))
+            sql-stocks (ds/sort-by sql-stocks
+                                   #(vector
                                      (get % "date")
-                                     (get % "symbol"))
-                                   sql-stocks)]
+                                     (get % "symbol")))]
         (is (= (ds/row-count sql-stocks)
                (ds/row-count stocks)))
         (is (dfn/equals (stocks "price") (sql-stocks "price"))))
@@ -112,10 +112,11 @@
             (is (= col-dtype
                    (dtype/get-datatype sql-col))
                 (format "Datatype for column %s" cname))
-            (let [src-rdr (dtype/->reader col col-dtype {:missing-policy :elide})
-                  dst-rdr (dtype/->reader sql-col col-dtype {:missing-policy :elide})]
+            (let [src-rdr col
+                  dst-rdr sql-col]
               (if (casting/numeric-type? col-dtype)
-                (is (dfn/equals src-rdr dst-rdr)
+                (is (dfn/equals (dtype/->array :float64 {:nan-strategy :remove} src-rdr)
+                                (dtype/->array :float64 {:nan-strategy :remove} dst-rdr))
                     (format "Numeric equals for column %s" cname))
                 (is (= (vec src-rdr)
                        (vec dst-rdr))
@@ -192,7 +193,7 @@
                (ds/missing sql-ds)))
         (is (= (vec (test-ds :a))
                (vec (sql-ds "a"))))
-        (is (= (vec (dtype-dt/unpack (test-ds :b)))
+        (is (= (vec (test-ds :b))
                (vec (sql-ds "b")))))
       (finally
         (try
