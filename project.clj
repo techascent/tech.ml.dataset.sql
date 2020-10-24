@@ -1,4 +1,4 @@
-(defproject techascent/tech.ml.dataset.sql "5.00-alpha-10-SNAPSHOT"
+(defproject techascent/tech.ml.dataset.sql "5.00-alpha-11"
   :description "SQL bindings for the 5.X branch of tech.ml.dataset"
   :url "https://github.com/techascent/tech.ml.dataset.sql"
   :license {:name "EPL-2.0"
@@ -8,7 +8,7 @@
   {:dev
    {:dependencies [[org.postgresql/postgresql  "42.2.12"]
                    [seancorfield/next.jdbc     "1.0.424"]
-                   [techascent/tech.ml.dataset "5.00-alpha-9"]]}
+                   [techascent/tech.ml.dataset "5.00-alpha-11"]]}
    :codox
    {:dependencies [[codox-theme-rdash "0.1.2"]]
     :plugins [[lein-codox "0.10.7"]]
