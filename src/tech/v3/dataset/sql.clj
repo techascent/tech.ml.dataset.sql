@@ -15,6 +15,7 @@
 
 (set! *warn-on-reflection* true)
 
+(defonce crap-atom (atom nil))
 
 (defn result-set->dataset
   "Given a result set, return a dataset.
@@ -26,6 +27,7 @@
   ([^ResultSet results {:keys [close?]
                         :or {close? true}
                         :as options}]
+   (reset! crap-atom (.getMetaData results))
    (try
      (let [columns (->> (sql-impl/result-set-metadata->data (.getMetaData results))
                         (map-indexed

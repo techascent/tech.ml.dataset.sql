@@ -206,8 +206,8 @@
                    {:dbtype   "postgres"
                     :dbname   "aact"
                     :host     "aact-db.ctti-clinicaltrials.org"
-                    :user     ----
-                    :password ----
+                    :user     "chrisn"
+                    :password "azBA0IlZZG6T"
                     :port     "5432"}))
   (def conn
     (doto (jdbc/get-connection datasource {:auto-commit false, :read-only true})
@@ -216,4 +216,15 @@
   (def studies (sql/sql->dataset conn "table studies limit 501"))
 
 
+  (def response-data-both (sql/sql->dataset conn "
+select sponsors.name,
+(count(*) FILTER (WHERE extract('year' from AGE(date_trunc('year', current_date),
+                              date_trunc('year', studies.study_first_submitted_date))) <= 2) / 3) as \"AvgPerYearSubmitted\",
+(count(*) FILTER (WHERE extract('year' from AGE(date_trunc('year', current_date),
+                              date_trunc('year', studies.start_date))) <= 2) / 3) as \"AvgPerYearStarted\"
+from sponsors
+left join studies on sponsors.nct_id = studies.nct_id
+group by sponsors.name
+order by \"AvgPerYearSubmitted\" DESC
+LIMIT 100"))
   )
