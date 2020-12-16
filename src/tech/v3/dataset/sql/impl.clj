@@ -70,22 +70,25 @@
 
 (defn- sql-time->duration
   ^java.time.Duration [^java.sql.Time time]
-  (dtype-dt/milliseconds->duration
-   ;;On postgres times are coming back as jan 2nd, not jan 1st.
-   (rem (.getTime time)
-        dtype-dt/milliseconds-in-day)))
+  (when time
+    (dtype-dt/milliseconds->duration
+     ;;On postgres times are coming back as jan 2nd, not jan 1st.
+     (rem (.getTime time)
+          dtype-dt/milliseconds-in-day))))
 
 
 (defn- sql-date->local-date
   ^java.time.LocalDate [^java.sql.Date date]
-  (dtype-dt/milliseconds-since-epoch->local-date
-   (.getTime date)))
+  (when date
+    (dtype-dt/milliseconds-since-epoch->local-date
+     (.getTime date))))
 
 
 (defn- sql-timestamp->instant
   ^Instant [^java.sql.Timestamp date]
-  (dtype-dt/milliseconds-since-epoch->instant
-   (.getTime date)))
+  (when date
+    (dtype-dt/milliseconds-since-epoch->instant
+     (.getTime date))))
 
 
 (defmacro ^:private read-results

@@ -199,3 +199,21 @@
         (try
           (sql/drop-table! @dev-conn* test-ds)
           (catch Throwable e nil))))))
+
+
+(comment
+  (def datasource (jdbc/get-datasource
+                   {:dbtype   "postgres"
+                    :dbname   "aact"
+                    :host     "aact-db.ctti-clinicaltrials.org"
+                    :user     ----
+                    :password ----
+                    :port     "5432"}))
+  (def conn
+    (doto (jdbc/get-connection datasource {:auto-commit false, :read-only true})
+      (.setCatalog "postgres")))
+
+  (def studies (sql/sql->dataset conn "table studies limit 501"))
+
+
+  )
