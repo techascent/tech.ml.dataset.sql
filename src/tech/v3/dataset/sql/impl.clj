@@ -3,9 +3,11 @@
             [tech.v3.datatype.casting :as casting]
             [tech.v3.datatype.datetime :as dtype-dt]
             [tech.v3.datatype.packing :as packing]
+            [tech.v3.datatype.errors :as errors]
             [tech.v3.dataset :as ds]
             [tech.v3.dataset.column :as ds-col]
             [tech.v3.dataset.impl.column-base :as col-base]
+            [clojure.data.json :as json]
             [clojure.set :as set])
   (:import [java.sql Connection ResultSetMetaData PreparedStatement DatabaseMetaData
             ResultSet]
@@ -108,7 +110,8 @@
     :local-date `(-> (.getDate ~results ~idx)
                      (sql-date->local-date))
     :instant `(-> (.getTimestamp ~results ~idx)
-                  (sql-timestamp->instant))))
+                  (sql-timestamp->instant))
+    :object `(.getString ~results ~idx)))
 
 
 (defn- as-list ^List [item] item)
@@ -166,6 +169,8 @@
       :local-date (impl-read-fn :local-date results container
                                 missing missing-value idx)
       :instant (impl-read-fn :instant results container
+                             missing missing-value idx)
+      :object (impl-read-fn :object results container
                              missing missing-value idx))))
 
 
@@ -303,7 +308,11 @@
         rdr (dtype/->reader rdr)
         column-idx (int column-idx)
         sql-type-index (-> (.getParameterMetaData stmt)
-                           (.getParameterType column-idx))]
+                           (.getParameterType column-idx))
+        metadata (.getParameterMetaData stmt)
+        ptypename (-> (.getParameterTypeName metadata column-idx)
+                      (.toLowerCase))]
+
     (case dtype
       :boolean (apply-pstmt-fn :boolean column-idx stmt rdr missing sql-type-index)
       :int8 (apply-pstmt-fn :int8 column-idx stmt rdr missing sql-type-index)
@@ -320,7 +329,14 @@
                                        sql-type-index)
       :zoned-date-time (apply-pstmt-fn :zoned-date-time column-idx stmt rdr missing
                                        sql-type-index)
-      :instant (apply-pstmt-fn :instant column-idx stmt rdr missing sql-type-index))))
+      :instant (apply-pstmt-fn :instant column-idx stmt rdr missing sql-type-index)
+      (if (.contains ptypename "json")
+        (let [rdr (-> (dtype/emap json/json-str :string rdr)
+                      (dtype/->reader))]
+          (apply-pstmt-fn :string column-idx stmt rdr missing sql-type-index))
+        (errors/throwf "Unrecognized dataset column type (%s)/sql column type (%s)"
+                       (name dtype) ptypename))
+      )))
 
 
 (defn insert-sql
@@ -340,7 +356,11 @@ Expected dataset metadata to contain non-empty :primary-keys")))))]
                  (map #(->str (:name (meta %))))
                  (interpose ", "))
             [") VALUES ("]
-            (->> (repeat (ds/column-count dataset) "?")
+            (->> (ds/columns dataset)
+                 (map (fn [col]
+                        (if-let [sql-type (:sql-datatype (meta col))]
+                          (str "? ::" sql-type)
+                          "?")))
                  (interpose  ", "))
             [")"]
             (when-let [upsert-keys postgres-upsert-keys]

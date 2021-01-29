@@ -7,6 +7,7 @@
             [tech.v3.datatype.casting :as casting]
             [tech.v3.datatype.datetime :as dtype-dt]
             [tech.v3.datatype :as dtype]
+            [clojure.data.json :as json]
             [next.jdbc :as jdbc]
             [clojure.test :refer [deftest is]])
   (:import [java.util UUID]))
@@ -199,6 +200,28 @@
         (try
           (sql/drop-table! @dev-conn* test-ds)
           (catch Throwable e nil))))))
+
+
+(deftest jsonb
+  (try
+    (let [test-ds (-> (ds/->dataset [{:jsondata {:a 1 :b 2}}
+                                     {:jsondata {:c 2 :d 3}}]
+                                    {:dataset-name "jsonb_test"})
+                      (ds/column-map :jsondata json/json-str :string identity)
+                      (ds/update-column :jsondata #(with-meta %
+                                                    {:sql-datatype "jsonb"})))]
+      (sql-impl/execute-update! @dev-conn*
+                                "create table jsonb_test (jsondata jsonb);")
+      (sql/insert-dataset! @dev-conn* test-ds)
+      (let [new-ds (sql/sql->dataset @dev-conn*
+                                     "select * from jsonb_test"
+                                     {:key-fn keyword})]
+        (is (= (mapv json/read-str (test-ds :jsondata))
+               (mapv json/read-str (new-ds :jsondata))))))
+    (finally
+      (try
+        (sql/drop-table! @dev-conn* "jsonb_test")
+        (catch Throwable e nil)))))
 
 
 (comment

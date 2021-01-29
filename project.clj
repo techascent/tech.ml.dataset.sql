@@ -8,7 +8,7 @@
   {:dev
    {:dependencies [[org.postgresql/postgresql  "42.2.12"]
                    [seancorfield/next.jdbc     "1.0.424"]
-                   [techascent/tech.ml.dataset "5.00-beta-19"]]}
+                   [techascent/tech.ml.dataset "5.00-beta-28"]]}
    :codox
    {:dependencies [[codox-theme-rdash "0.1.2"]]
     :plugins [[lein-codox "0.10.7"]]
