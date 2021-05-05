@@ -31,14 +31,15 @@
                          (fn [idx {:keys [datatype name label] :as entry}]
                            (let [container (col-base/make-container datatype)
                                  missing (bitmap/->bitmap)]
-                             {:name label
-                              :datatype datatype
-                              :data container
-                              :missing missing
-                              :parse-fn (sql-impl/make-read-fn results datatype
-                                                               container missing
-                                                               (inc idx))}))))
-           parse-fns (mapv :parse-fn columns)]
+                             #:tech.v3.dataset{:name label
+                                               :datatype datatype
+                                               :data container
+                                               :missing missing
+                                               :force-datatype? true
+                                               :parse-fn (sql-impl/make-read-fn results datatype
+                                                                                container missing
+                                                                                (inc idx))}))))
+           parse-fns (mapv :tech.v3.dataset/parse-fn columns)]
        (loop [continue? (.next results)]
          (when continue?
            (let [row-idx (.getRow results)]
