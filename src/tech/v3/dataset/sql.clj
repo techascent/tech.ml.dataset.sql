@@ -1,6 +1,56 @@
 (ns tech.v3.dataset.sql
   "Pathways to transform dataset to and from SQL databases.  Built directly on
-  java.sql interfaces."
+  java.sql interfaces.
+
+  ```clojure
+user> (def stocks (-> (ds/->dataset \"https://github.com/techascent/tech.ml.dataset/raw/master/test/data/stocks.csv\" {:key-fn keyword})
+                      (vary-meta assoc
+                                 :name \"stocks\"
+                                 :primary-keys [\"date\" \"symbol\"])))
+
+#'user/stocks
+user> (ds/head stocks)
+stocks [5 3]:
+
+| :symbol |      :date | :price |
+|---------|------------|-------:|
+|    MSFT | 2000-01-01 |  39.81 |
+|    MSFT | 2000-02-01 |  36.35 |
+|    MSFT | 2000-03-01 |  43.22 |
+|    MSFT | 2000-04-01 |  28.37 |
+|    MSFT | 2000-05-01 |  25.45 |
+user> (sql/table-exists? dev-conn stocks)
+false
+user> (sql/create-table! dev-conn stocks)
+nil
+user> (sql/table-exists? dev-conn stocks)
+true
+user> (sql/insert-dataset! dev-conn stocks)
+nil
+user> ;;Note the column names are now strings.
+user> (def sql-stocks (sql/sql->dataset dev-conn \"Select * from stocks\"))
+#'user/sql-stocks
+user> (ds/head sql-stocks)
+_unnamed [5 3]:
+
+| symbol |       date | price |
+|--------|------------|------:|
+|   MSFT | 2000-01-01 | 39.81 |
+|   MSFT | 2000-02-01 | 36.35 |
+|   MSFT | 2000-03-01 | 43.22 |
+|   MSFT | 2000-04-01 | 28.37 |
+|   MSFT | 2000-05-01 | 25.45 |
+user> (ds/head (sql/sql->dataset dev-conn \"Select * from stocks\" {:key-fn keyword}))
+_unnamed [5 3]:
+
+| :symbol |      :date | :price |
+|---------|------------|-------:|
+|    MSFT | 2000-01-01 |  39.81 |
+|    MSFT | 2000-02-01 |  36.35 |
+|    MSFT | 2000-03-01 |  43.22 |
+|    MSFT | 2000-04-01 |  28.37 |
+|    MSFT | 2000-05-01 |  25.45 |
+```"
   (:require [tech.v3.datatype.bitmap :as bitmap]
             [tech.v3.dataset :as ds]
             [tech.v3.dataset.impl.dataset :as ds-impl]
@@ -16,7 +66,7 @@
 (set! *warn-on-reflection* true)
 
 (defn result-set->dataset
-  "Given a result set, return a dataset.
+  "Given a java.sql.ResultSet, return a dataset.
 
   Options:
 
@@ -55,7 +105,25 @@
 
 (defn sql->dataset
   "Given a connection and an sql statement, convert the results of executing the
-  statement to a dataset. For options, see `result-set->dataset`"
+  statement to a dataset. For options, see `result-set->dataset`
+
+  Example:
+
+```clojure
+user> (def sql-stocks (sql/sql->dataset dev-conn \"Select * from stocks\"))
+#'user/sql-stocks
+user> (ds/head sql-stocks)
+_unnamed [5 3]:
+
+| symbol |       date | price |
+|--------|------------|------:|
+|   MSFT | 2000-01-01 | 39.81 |
+|   MSFT | 2000-02-01 | 36.35 |
+|   MSFT | 2000-03-01 | 43.22 |
+|   MSFT | 2000-04-01 | 28.37 |
+|   MSFT | 2000-05-01 | 25.45 |
+```
+  "
   ([^Connection conn sql options]
    (try
      (with-open [statement (.createStatement conn)]
@@ -86,7 +154,15 @@
   "Test if a table exists.
 
   * conn - java.sql.Connection
-  * dataset - string, keyword, symbol, or dataset"
+  * dataset - string, keyword, symbol, or dataset
+
+  Example:
+
+```clojure
+user> (sql/table-exists? dev-conn stocks)
+true
+```
+  "
   [conn dataset]
   (try
     (sql->dataset conn (format "Select COUNT(*) from %s where 1 = 0"
@@ -128,7 +204,8 @@
 
   * `:table-name` - set the name of the table to use.  Overrides the dataset metadata.
   * `:primary-key` - Array of column names to use as the primary key of this table.
-     Overrides the dataset metadata."
+     Overrides the dataset metadata.
+"
   ([^Connection conn dataset options]
    (let [table-name (sql-impl/->str (or (:table-name options)
                                         (sql-impl/dataset->table-name dataset)))

@@ -17,7 +17,7 @@
    :exec-fn hf.depstar/jar
    :exec-args {:group-id "techascent"
                :artifact-id "tech.ml.dataset.sql"
-               :version "6.000-SNAPSHOT"
+               :version "6.000"
                :sync-pom true
                :jar "target/tech.ml.dataset.sql.jar"}}
   ;;deploy to clojars
@@ -45,7 +45,6 @@
                :description "SQL bindings for tech.ml.dataset"
                :metadata {:doc/format :markdown}
                :themes [:rdash]
-               :language :clojurescript
                :source-paths ["src"]
                :output-path "docs"
                :source-uri "https://github.com/techascent/tech.ml.dataset.sql/blob/master/{filepath}#L{line}"
