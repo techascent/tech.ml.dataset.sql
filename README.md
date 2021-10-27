@@ -125,6 +125,13 @@ Note that local-dates are converted to instants in UTC.  The same is true for al
 date/time types; all are just converted to java.sql.Date objects.  Numeric datatypes,
 date/time types, strings and UUID's are supported datatypes.
 
+## Develop
+
+Run tests
+
+`clj -M:dev:test``
+
+
 
 ## License
 
