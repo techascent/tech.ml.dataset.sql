@@ -129,7 +129,7 @@ date/time types, strings and UUID's are supported datatypes.
 
 Run tests
 
-`clj -M:dev:test``
+`clj -M:dev:test`
 
 
 
