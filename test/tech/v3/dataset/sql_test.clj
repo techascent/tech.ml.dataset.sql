@@ -173,9 +173,9 @@
                             dtype-dt/zoned-date-time->instant
                             dtype-dt/instant->milliseconds-since-epoch)
                       (test-ds :b)))
-              (vec (map #(-> %
-                           dtype-dt/instant->milliseconds-since-epoch)
-                     (sql-ds "b"))))))
+                (vec (map #(-> %
+                             dtype-dt/instant->milliseconds-since-epoch)
+                       (sql-ds "b"))))))
       (finally
         (try
           (sql/drop-table! @dev-conn* test-ds)
