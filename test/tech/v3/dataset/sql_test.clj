@@ -169,8 +169,13 @@
                (ds/missing sql-ds)))
         (is (= (vec (test-ds :a))
                (vec (sql-ds "a"))))
-        (is (= (vec (map dtype-dt/zoned-date-time->instant (test-ds :b)))
-               (vec (sql-ds "b")))))
+        (is (= (vec (map #(-> %
+                            dtype-dt/zoned-date-time->instant
+                            dtype-dt/instant->milliseconds-since-epoch)
+                      (test-ds :b)))
+              (vec (map #(-> %
+                           dtype-dt/instant->milliseconds-since-epoch)
+                     (sql-ds "b"))))))
       (finally
         (try
           (sql/drop-table! @dev-conn* test-ds)
