@@ -7,18 +7,14 @@
             [tech.v3.datatype.casting :as casting]
             [tech.v3.datatype.datetime :as dtype-dt]
             [tech.v3.datatype :as dtype]
+            [tech.v3.dataset.test-fixtures :refer [with-test-db dev-conn]]
             [clojure.data.json :as json]
             [next.jdbc :as jdbc]
-            [clojure.test :refer [deftest is]])
+            [clojure.test :refer [deftest is use-fixtures]])
   (:import [java.util UUID]))
 
 
-(def dev-conn* (delay (doto (-> (sql-impl/jdbc-postgre-connect-str
-                                 "localhost:5432" "dev-user"
-                                 "dev-user" "unsafe-bad-password")
-                                (jdbc/get-connection {:auto-commit false}))
-                        (.setCatalog "dev-user"))))
-
+(use-fixtures :once with-test-db)
 
 (defn- uuid-table-name
   []
@@ -35,10 +31,10 @@
                               :name table-name
                               :primary-keys ["date" "symbol"]))]
     (try
-      (sql/create-table! @dev-conn* stocks)
-      (sql/insert-dataset! @dev-conn* stocks)
+      (sql/create-table! (dev-conn) stocks)
+      (sql/insert-dataset! (dev-conn) stocks)
       (let [sql-stocks (sql/sql->dataset
-                        @dev-conn* (format "Select * from %s"
+                        (dev-conn) (format "Select * from %s"
                                            table-name))
             stocks (ds/sort-by stocks
                                #(vector
@@ -53,7 +49,7 @@
         (is (dfn/equals (stocks "price") (sql-stocks "price"))))
       (finally
         (try
-          (sql/drop-table! @dev-conn* stocks)
+          (sql/drop-table! (dev-conn) stocks)
           (catch Throwable e nil))))))
 
 
@@ -63,10 +59,10 @@
                                {:a 4}]
                               {:dataset-name (uuid-table-name)})]
     (try
-      (sql/create-table! @dev-conn* test-ds)
-      (sql/insert-dataset! @dev-conn* test-ds)
+      (sql/create-table! (dev-conn) test-ds)
+      (sql/insert-dataset! (dev-conn) test-ds)
       (let [sql-ds (sql/sql->dataset
-                    @dev-conn* (format "Select * from %s"
+                    (dev-conn) (format "Select * from %s"
                                        (ds/dataset-name test-ds)))]
         (is (= (ds/row-count sql-ds)
                (ds/row-count test-ds)))
@@ -78,7 +74,7 @@
                (vec (sql-ds "b")))))
       (finally
         (try
-          (sql/drop-table! @dev-conn* test-ds)
+          (sql/drop-table! (dev-conn) test-ds)
           (catch Throwable e nil))))))
 
 (deftest ames-ds
@@ -93,9 +89,9 @@
                                      [cname (str "a_" (.toLowerCase cname))]))
                               (into {})))))]
     (try
-      (sql/create-table! @dev-conn* test-ds)
-      (sql/insert-dataset! @dev-conn* test-ds)
-      (let [sql-ds (sql/sql->dataset @dev-conn*
+      (sql/create-table! (dev-conn) test-ds)
+      (sql/insert-dataset! (dev-conn) test-ds)
+      (let [sql-ds (sql/sql->dataset (dev-conn)
                                      (format "Select * from %s"
                                              (ds/dataset-name test-ds)))]
         (is (= (ds/row-count test-ds)
@@ -124,7 +120,7 @@
                     (format "Object equals for column %s" cname)))))))
       (finally
         (try
-          (sql/drop-table! @dev-conn* test-ds)
+          (sql/drop-table! (dev-conn) test-ds)
           (catch Throwable e nil))))))
 
 
@@ -133,10 +129,10 @@
                                {:b (UUID/randomUUID)}]
                               {:dataset-name (uuid-table-name)})]
     (try
-      (sql/create-table! @dev-conn* test-ds)
-      (sql/insert-dataset! @dev-conn* test-ds)
+      (sql/create-table! (dev-conn) test-ds)
+      (sql/insert-dataset! (dev-conn) test-ds)
       (let [sql-ds (sql/sql->dataset
-                    @dev-conn* (format "Select * from %s"
+                    (dev-conn) (format "Select * from %s"
                                        (ds/dataset-name test-ds)))]
         (is (= (ds/row-count sql-ds)
                (ds/row-count test-ds)))
@@ -148,7 +144,7 @@
                (vec (sql-ds "b")))))
       (finally
         (try
-          (sql/drop-table! @dev-conn* test-ds)
+          (sql/drop-table! (dev-conn) test-ds)
           (catch Throwable e nil))))))
 
 
@@ -158,10 +154,10 @@
                               {:dataset-name (uuid-table-name)})]
 
     (try
-      (sql/create-table! @dev-conn* test-ds)
-      (sql/insert-dataset! @dev-conn* test-ds)
+      (sql/create-table! (dev-conn) test-ds)
+      (sql/insert-dataset! (dev-conn) test-ds)
       (let [sql-ds (sql/sql->dataset
-                    @dev-conn* (format "Select * from %s"
+                    (dev-conn) (format "Select * from %s"
                                        (ds/dataset-name test-ds)))]
         (is (= (ds/row-count sql-ds)
                (ds/row-count test-ds)))
@@ -178,7 +174,7 @@
                        (sql-ds "b"))))))
       (finally
         (try
-          (sql/drop-table! @dev-conn* test-ds)
+          (sql/drop-table! (dev-conn) test-ds)
           (catch Throwable e nil))))))
 
 
@@ -188,10 +184,10 @@
                               {:dataset-name (uuid-table-name)})]
 
     (try
-      (sql/create-table! @dev-conn* test-ds)
-      (sql/insert-dataset! @dev-conn* test-ds)
+      (sql/create-table! (dev-conn) test-ds)
+      (sql/insert-dataset! (dev-conn) test-ds)
       (let [sql-ds (sql/sql->dataset
-                    @dev-conn* (format "Select * from %s"
+                    (dev-conn) (format "Select * from %s"
                                        (ds/dataset-name test-ds)))]
         (is (= (ds/row-count sql-ds)
                (ds/row-count test-ds)))
@@ -203,7 +199,7 @@
                (vec (sql-ds "b")))))
       (finally
         (try
-          (sql/drop-table! @dev-conn* test-ds)
+          (sql/drop-table! (dev-conn) test-ds)
           (catch Throwable e nil))))))
 
 
@@ -215,17 +211,17 @@
                       (ds/column-map :jsondata json/json-str :string identity)
                       (ds/update-column :jsondata #(with-meta %
                                                     {:sql-datatype "jsonb"})))]
-      (sql-impl/execute-update! @dev-conn*
+      (sql-impl/execute-update! (dev-conn)
                                 "create table jsonb_test (jsondata jsonb);")
-      (sql/insert-dataset! @dev-conn* test-ds)
-      (let [new-ds (sql/sql->dataset @dev-conn*
+      (sql/insert-dataset! (dev-conn) test-ds)
+      (let [new-ds (sql/sql->dataset (dev-conn)
                                      "select * from jsonb_test"
                                      {:key-fn keyword})]
         (is (= (mapv json/read-str (test-ds :jsondata))
                (mapv json/read-str (new-ds :jsondata))))))
     (finally
       (try
-        (sql/drop-table! @dev-conn* "jsonb_test")
+        (sql/drop-table! (dev-conn) "jsonb_test")
         (catch Throwable e nil)))))
 
 
