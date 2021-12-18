@@ -3,7 +3,7 @@
  {:dev
   {:extra-deps {org.postgresql/postgresql  {:mvn/version "42.2.12"}
                 seancorfield/next.jdbc     {:mvn/version "1.0.424"}
-                techascent/tech.ml.dataset {:mvn/version "6.021"}}}
+                techascent/tech.ml.dataset {:mvn/version "6.042"}}}
   :test
   {:extra-deps {com.cognitect/test-runner
                 {:git/url "https://github.com/cognitect-labs/test-runner"
