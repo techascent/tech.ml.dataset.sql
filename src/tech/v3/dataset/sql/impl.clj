@@ -31,7 +31,8 @@
   (merge
    {"java.lang.String" :string
     "java.lang.Boolean" :boolean
-    "java.sql.Time" :duration
+    "org.postgresql.util.PGInterval" :duration
+    "java.sql.Time" :instant
     "java.sql.Date" :local-date
     "java.sql.Timestamp" :instant
     "java.util.UUID" :uuid}
@@ -47,8 +48,11 @@
 
 
 (defn result-set-type-class->datatype
-  [^String cls-name]
-  (get java-cls->datatype-map cls-name :object))
+  [^String cls-name ^long precision]
+  (let [lookup-val (get java-cls->datatype-map cls-name :object)]
+    (if (keyword? lookup-val)
+      lookup-val
+      (lookup-val precision))))
 
 
 (defn result-set-metadata->data
@@ -57,7 +61,8 @@
     (let [col-idx (int col-idx)]
       {:name (.getColumnName metadata col-idx )
        :datatype (result-set-type-class->datatype
-                  (.getColumnClassName metadata col-idx))
+                  (.getColumnClassName metadata col-idx)
+                  (.getPrecision metadata col-idx))
        :label (.getColumnLabel metadata col-idx)
        :type-name (.getColumnTypeName metadata col-idx)
        :type-index (.getColumnType metadata col-idx)

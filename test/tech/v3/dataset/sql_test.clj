@@ -229,6 +229,29 @@
         (catch Throwable e nil)))))
 
 
+(deftest psql-alltypes-test
+  (try
+    (sql-impl/execute-update! @dev-conn*
+                              "create table datetime_types
+(ts timestamp, ts_tz timestamp with time zone,
+ dt date,
+ tt time, tt_tz time with time zone,
+ ival interval,
+ i16 smallint,
+ i32 integer, i64 bigint,
+ f32 real, f64 double precision, str varchar)")
+    (sql-impl/execute-update! @dev-conn*
+                              "insert into datetime_types
+values ('1999-01-08 04:05:06', '1999-01-08 04:05:06 -07', '1999-Jan-08',
+'04:05:06.789', '04:05:06.789-8', '3 years',
+0,
+0, 0,
+0.0, 0.0, 'hello')")
+    (finally
+      (try (sql/drop-table! @dev-conn* "datetime_types")
+           (catch Throwable e nil)))))
+
+
 (comment
   (def datasource (jdbc/get-datasource
                    {:dbtype   "postgres"
