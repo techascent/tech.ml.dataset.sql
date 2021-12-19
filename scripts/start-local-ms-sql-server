@@ -1,0 +1,9 @@
+#!/bin/bash
+
+docker run --restart=always --name azure-sql-edge \
+    -d                                       \
+    -e ACCEPT_EULA=yes                \
+    -e SA_PASSWORD=unsafe-bad-password-0 \
+    -p 1433:1433                            \
+    -v $(pwd)/data:/var/lib/azure-sql-edge/data  \
+    mcr.microsoft.com/azure-sql-edge

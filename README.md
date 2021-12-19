@@ -127,6 +127,8 @@ date/time types, strings and UUID's are supported datatypes.
 
 ## Develop
 
+See scripts directory.
+
 Run tests
 
 `clj -M:dev:test`

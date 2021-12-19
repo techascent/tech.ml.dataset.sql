@@ -2,6 +2,7 @@
  :aliases
  {:dev
   {:extra-deps {org.postgresql/postgresql  {:mvn/version "42.2.12"}
+                com.microsoft.sqlserver/mssql-jdbc {:mvn/version "9.4.0.jre11"}
                 seancorfield/next.jdbc     {:mvn/version "1.0.424"}
                 techascent/tech.ml.dataset {:mvn/version "6.042"}}}
   :test

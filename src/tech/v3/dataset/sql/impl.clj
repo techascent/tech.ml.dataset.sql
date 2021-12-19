@@ -19,12 +19,16 @@
 (set! *warn-on-reflection* true)
 
 
-
 (defn jdbc-postgre-connect-str
   ^String [hoststr database user pwd]
   (format "jdbc:postgresql://%s/%s?user=%s&password=%s"
-          hoststr database user pwd))
+    hoststr database user pwd))
 
+
+(defn jdbc-sql-server-connect-str
+  ^String [hoststr database user pwd]
+  (format "jdbc:sqlserver://%s;databaseName=%s;user=%s;password=%s"
+    hoststr database user pwd))
 
 
 (def java-cls->datatype-map
