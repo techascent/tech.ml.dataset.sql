@@ -1,5 +1,6 @@
 #!/bin/bash
 
+if [ ! "$(docker ps | grep azure-sql-edge)" ]; then
 docker run --restart=always --name azure-sql-edge \
     -d                                       \
     -e ACCEPT_EULA=yes                \
@@ -7,3 +8,4 @@ docker run --restart=always --name azure-sql-edge \
     -p 1433:1433                            \
     -v $(pwd)/data:/var/lib/azure-sql-edge/data  \
     mcr.microsoft.com/azure-sql-edge
+fi

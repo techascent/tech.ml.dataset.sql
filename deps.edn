@@ -2,7 +2,9 @@
  :aliases
  {:dev
   {:extra-deps {org.postgresql/postgresql  {:mvn/version "42.2.12"}
-                com.microsoft.sqlserver/mssql-jdbc {:mvn/version "9.4.0.jre11"}
+                ;;Various users of the tmd system are still on jdk-8
+                com.microsoft.sqlserver/mssql-jdbc {:mvn/version "9.4.1.jre8"}
+                org.duckdb/duckdb_jdbc {:mvn/version "0.3.1"}
                 seancorfield/next.jdbc     {:mvn/version "1.0.424"}
                 techascent/tech.ml.dataset {:mvn/version "6.042"}}}
   :test

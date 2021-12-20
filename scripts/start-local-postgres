@@ -1,5 +1,6 @@
 #!/bin/bash
 
+if [ ! "$(docker ps | grep postgres-dev)" ]; then
 docker run --restart=always --name postgres-dev \
     -d                                       \
     -e POSTGRES_USER=dev-user                \
@@ -7,3 +8,4 @@ docker run --restart=always --name postgres-dev \
     -p 5432:5432                             \
     -v $(pwd)/data:/var/lib/postgresql/data  \
     postgres
+fi

@@ -3,26 +3,24 @@
              [next.jdbc :as jdbc]
              [clojure.test :as t]))
 
-
-(def postgres-url {:url (sql-impl/jdbc-postgre-connect-str
-                           "localhost:5432" "dev-user"
-                           "dev-user" "unsafe-bad-password")
-                   :catalog "dev-user"})
-
-
-(def sql-server-url {:url (sql-impl/jdbc-sql-server-connect-str
-                            "localhost:1433" ""
-                            "sa" "unsafe-bad-password-0")
-                     :catalog "master"})
-
-
-(def test-db-specs [postgres-url sql-server-url])
+(def connection-data
+  {:postgres {:url (sql-impl/jdbc-postgre-connect-str
+                    "localhost:5432" "dev-user"
+                    "dev-user" "unsafe-bad-password")
+              :catalog "dev-user"}
+   :sql-server {:url (sql-impl/jdbc-sql-server-connect-str
+                      "localhost:1433" ""
+                      "sa" "unsafe-bad-password-0")
+                :catalog "master"}
+   :duckdb {:url "jdbc:duckdb:"}})
 
 
-(defn make-dev-conn-fixture [url catalog]
-  (fn [] (def dev-conn* (delay (doto (-> postgres-url
-                                     (jdbc/get-connection {:auto-commit false}))
-                                (.setCatalog catalog))))))
+(defn connect
+  [{:keys [url catalog]}]
+  (let [conn (jdbc/get-connection url {:auto-commit false})]
+    (when catalog
+      (.setCatalog conn catalog))
+    conn))
 
 
 (def db-spec (atom nil))
