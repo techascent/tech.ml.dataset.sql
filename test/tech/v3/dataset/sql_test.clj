@@ -7,14 +7,11 @@
             [tech.v3.datatype.casting :as casting]
             [tech.v3.datatype.datetime :as dtype-dt]
             [tech.v3.datatype :as dtype]
-            [tech.v3.dataset.test-fixtures :refer [with-test-db dev-conn]]
+            [tech.v3.dataset.sql-test-utils :refer [def-db-test dev-conn]]
             [clojure.data.json :as json]
             [next.jdbc :as jdbc]
-            [clojure.test :refer [deftest is use-fixtures]])
+            [clojure.test :refer [deftest is]])
   (:import [java.util UUID]))
-
-
-(use-fixtures :once with-test-db)
 
 (defn- uuid-table-name
   []
@@ -24,7 +21,7 @@
       (#(str "aa" %))))
 
 
-(deftest stocks-dataset
+(def-db-test stocks-dataset
   (let [table-name (uuid-table-name)
         stocks (-> (ds/->dataset "test/data/stocks.csv")
                    (vary-meta assoc
@@ -53,7 +50,7 @@
           (catch Throwable e nil))))))
 
 
-(deftest small-missing
+(def-db-test small-missing
   (let [test-ds (ds/->dataset [{:a 1 :b 2}
                                {:b 3}
                                {:a 4}]
@@ -77,7 +74,7 @@
           (sql/drop-table! (dev-conn) test-ds)
           (catch Throwable e nil))))))
 
-(deftest ames-ds
+(def-db-test ames-ds
   (let [test-ds (-> (ds/->dataset "test/data/ames-train.csv.gz"
                                   {:dataset-name (uuid-table-name)})
                     (ds/select-rows (range 20))
@@ -124,7 +121,7 @@
           (catch Throwable e nil))))))
 
 
-(deftest sql-uuid-test
+(def-db-test sql-uuid-test
   (let [test-ds (ds/->dataset [{:a 1 :b (UUID/randomUUID)}
                                {:b (UUID/randomUUID)}]
                               {:dataset-name (uuid-table-name)})]
@@ -148,7 +145,7 @@
           (catch Throwable e nil))))))
 
 
-(deftest zoned-date-time
+(def-db-test zoned-date-time
   (let [test-ds (ds/->dataset [{:a 1 :b (dtype-dt/zoned-date-time)}
                                {:a 2 :b (dtype-dt/zoned-date-time)}]
                               {:dataset-name (uuid-table-name)})]
@@ -178,7 +175,7 @@
           (catch Throwable e nil))))))
 
 
-(deftest duration
+(def-db-test duration
   (let [test-ds (ds/->dataset [{:a 1 :b (dtype-dt/milliseconds->duration 400)}
                                {:a 2 :b (dtype-dt/milliseconds->duration 10000)}]
                               {:dataset-name (uuid-table-name)})]
@@ -203,7 +200,7 @@
           (catch Throwable e nil))))))
 
 
-(deftest jsonb
+(def-db-test jsonb
   (try
     (let [test-ds (-> (ds/->dataset [{:jsondata {:a 1 :b 2}}
                                      {:jsondata {:c 2 :d 3}}]
