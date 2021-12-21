@@ -13,7 +13,9 @@
                       "localhost:1433" ""
                       "sa" "unsafe-bad-password-0")
                 :catalog "master"}
-   :duckdb {:url "jdbc:duckdb:"}})
+   ;; Their JDBC driver is very nonstandard.
+   ;; :duckdb {:url "jdbc:duckdb:"}
+   })
 
 
 (defn- do-connect

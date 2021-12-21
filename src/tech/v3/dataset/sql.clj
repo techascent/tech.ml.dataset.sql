@@ -216,7 +216,10 @@ true
                          (string? primary-key) [primary-key]
                          (seq primary-key) primary-key
                          :else [primary-key]))
-         sql (sql-impl/create-sql dataset table-name primary-key)]
+         sql (sql-impl/create-sql dataset table-name primary-key
+                                  (-> conn
+                                      (.getMetaData)
+                                      (.getDatabaseProductName)))]
      (sql-impl/execute-update! conn sql)))
   ([conn dataset]
    (create-table! conn dataset {})))

@@ -6,7 +6,8 @@
                 com.microsoft.sqlserver/mssql-jdbc {:mvn/version "9.4.1.jre8"}
                 org.duckdb/duckdb_jdbc {:mvn/version "0.3.1"}
                 seancorfield/next.jdbc     {:mvn/version "1.0.424"}
-                techascent/tech.ml.dataset {:mvn/version "6.042"}}}
+                techascent/tech.ml.dataset {:mvn/version "6.042"}}
+   :extra-paths ["test"]}
   :test
   {:extra-deps {com.cognitect/test-runner
                 {:git/url "https://github.com/cognitect-labs/test-runner"

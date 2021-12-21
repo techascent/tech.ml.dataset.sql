@@ -7,7 +7,7 @@
             [tech.v3.datatype.casting :as casting]
             [tech.v3.datatype.datetime :as dtype-dt]
             [tech.v3.datatype :as dtype]
-            [tech.v3.dataset.sql-test-utils :refer [def-db-test dev-conn]]
+            [tech.v3.dataset.sql-test-utils :refer [def-db-test dev-conn] :as sql-utils]
             [clojure.data.json :as json]
             [next.jdbc :as jdbc]
             [clojure.test :refer [deftest is]])

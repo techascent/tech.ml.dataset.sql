@@ -198,6 +198,7 @@
   [dtype sql-dtype]
   (swap! datatype->sql-datatype-map assoc dtype sql-dtype))
 
+;;These are default type mappings
 (->> [:boolean "bool"
       :int8 "tinyint"
       :int16 "smallint"
@@ -208,22 +209,30 @@
       :string "varchar"
       :uuid "uuid"
       :local-date "date"
+      :local-time "time"
       :local-date-time "timestamp"
       :zoned-date-time "timestamp"
       :instant "timestamp"
-      :duration "time"]
+      :duration "interval"]
      (partition 2)
      (map (partial apply add-datatype-mapping))
      (dorun))
 
+;;Specific databases need specific datatypes mangled slightly
+(def database-override-map
+  {"Microsoft SQL Server" {"varchar" "varchar(4000)"
+                           "uuid" "uniqueidentifier"
+                           "interval" "time"}})
+
 
 (defn datatype->sql-datatype
-  [dtype]
-  (let [dtype (if (packing/packed-datatype? dtype)
-                (packing/unpack-datatype dtype)
-                (casting/un-alias-datatype dtype))]
+  [colmeta db-name]
+  (let [dtype (if-let [sql-dt (:sql-datatype colmeta)]
+                sql-dt
+                (-> (packing/unpack-datatype (:datatype colmeta))
+                    (casting/un-alias-datatype)))]
     (if-let [retval (get @datatype->sql-datatype-map dtype)]
-      retval
+      (get-in database-override-map [db-name retval] retval)
       (throw (Exception. (format "%s has no current datatype mapping"
                                  dtype))))))
 
@@ -233,9 +242,11 @@
   (with-open [stmt (.createStatement conn)]
     (try
       (.executeUpdate stmt sql)
-      (.commit conn)
+      ; (.commit conn)
       (catch Throwable e
-        (.rollback conn)
+        (try
+          (.rollback conn)
+          (catch Throwable ee nil))
         (throw (ex-info (format "Error executing:\n%s\n%s"
                                 sql e)
                         {:error e}))))))
@@ -382,7 +393,7 @@ Expected dataset metadata to contain non-empty :primary-keys")))))]
 
 
 (defn create-sql
-  ([dataset table-name primary-key]
+  ([dataset table-name primary-key database-name]
    (let [n-cols (ds/column-count dataset)]
      (apply str "CREATE TABLE "
             table-name
@@ -393,7 +404,8 @@ Expected dataset metadata to contain non-empty :primary-keys")))))]
                                  (let [colmeta (meta column)
                                        colname (->str (:name colmeta))
                                        col-dtype (datatype->sql-datatype
-                                                  (:datatype colmeta))]
+                                                  colmeta
+                                                  database-name)]
                                    (if-not (== idx (dec n-cols))
                                      [" " colname " " col-dtype ",\n"]
                                      [" " colname " " col-dtype]))))
