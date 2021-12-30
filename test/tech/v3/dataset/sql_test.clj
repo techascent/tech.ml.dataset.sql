@@ -1,7 +1,7 @@
 (ns tech.v3.dataset.sql-test
   (:require [tech.v3.dataset :as ds]
             [tech.v3.dataset.sql :as sql]
-            [tech.v3.dataset.sql.impl :as sql-impl]
+            ;; [tech.v3.dataset.sql.impl :as sql-impl]
             [tech.v3.dataset.column :as ds-col]
             [tech.v3.datatype.functional :as dfn]
             [tech.v3.datatype.casting :as casting]
@@ -11,7 +11,9 @@
             [clojure.data.json :as json]
             [next.jdbc :as jdbc]
             [clojure.test :refer [deftest is]])
-  (:import [java.util UUID]))
+  (:import [java.util UUID]
+           [tech.v3.dataset Text]))
+
 
 (defn- uuid-table-name
   []
@@ -19,6 +21,29 @@
       (str)
       (#(.replace ^String % "-" "_"))
       (#(str "aa" %))))
+
+
+(defn supported-datatype-ds
+  []
+  (-> (ds/->dataset {:bytes (byte-array (range 10))
+                     :shorts (short-array (range 10))
+                     :ints (int-array (range 10))
+                     :longs (long-array (range 10))
+                     :floats (float-array (range 10))
+                     :doubles (double-array (range 10))
+                     :strings (map str (range 10))
+                     :text (map (comp #(Text. %) str) (range 10))
+                     :uuids (repeatedly 10 #(UUID/randomUUID))
+                     :instants (repeatedly dtype-dt/instant)
+                     :local-dates (repeatedly dtype-dt/local-date)
+                     :local-times (repeatedly dtype-dt/local-time)})
+      (vary-meta assoc
+                 :primary-key :uuids
+                 :name :testtable)))
+
+
+(def-db-test base-datatype-test
+  (let [ds (supported-datatype-ds)]))
 
 
 (def-db-test stocks-dataset
@@ -223,6 +248,28 @@
 
 
 (comment
+
+  (defn basic-dt-result-set
+    [db-kwd]
+    (let [conn (sql-utils/connect db-kwd)
+          db-name (sql-impl/database-name conn)]
+      (try (sql-impl/execute-update!
+            conn "create table dtt (
+i16 smallint, i32 int, i64 bigint,
+f32 float, f64 double precision,
+str varchar,
+txt text,
+ts timestamp,
+dt date,
+tt time)")
+           (sql-impl/execute-update!
+            conn "insert into dtt values
+(0, 0, 0, 0.0, 0.0, 'hello', 'text string long',
+ '01-01-1970', '01-01-1970', '06:30:30')")
+           (catch Throwable e (println e)))
+      (let [stmt (.createStatement conn)]
+        (.executeQuery stmt "select * from dtt"))))
+
   (def datasource (jdbc/get-datasource
                    {:dbtype   "postgres"
                     :dbname   "aact"

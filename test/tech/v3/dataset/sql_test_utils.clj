@@ -1,15 +1,15 @@
 (ns tech.v3.dataset.sql-test-utils
-  (:require  [tech.v3.dataset.sql.impl :as sql-impl]
+  (:require  [tech.v3.dataset.sql :as sql]
              [next.jdbc :as jdbc]
              [clojure.test :refer [deftest] :as t]))
 
 
 (def ^:private connection-data
-  {:postgres {:url (sql-impl/jdbc-postgre-connect-str
+  {:postgres {:url (sql/postgre-connect-str
                     "localhost:5432" "dev-user"
                     "dev-user" "unsafe-bad-password")
               :catalog "dev-user"}
-   :sql-server {:url (sql-impl/jdbc-sql-server-connect-str
+   :sql-server {:url (sql/sql-server-connect-str
                       "localhost:1433" ""
                       "sa" "unsafe-bad-password-0")
                 :catalog "master"}
