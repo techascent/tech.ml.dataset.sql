@@ -5,10 +5,10 @@
 
 
 (def ^:private connection-data
-  {:postgres {:url (sql/postgre-connect-str
-                    "localhost:5432" "dev-user"
-                    "dev-user" "unsafe-bad-password")
-              :catalog "dev-user"}
+  {:postgre-sql {:url (sql/postgre-sql-connect-str
+                      "localhost:5432" "dev-user"
+                      "dev-user" "unsafe-bad-password")
+                :catalog "dev-user"}
    :sql-server {:url (sql/sql-server-connect-str
                       "localhost:1433" ""
                       "sa" "unsafe-bad-password-0")

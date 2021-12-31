@@ -2,7 +2,8 @@
   "Pathways to transform dataset to and from SQL databases.  Built directly on
   java.sql interfaces.
 
-  ```clojure
+```clojure
+
 user> (def stocks (-> (ds/->dataset \"https://github.com/techascent/tech.ml.dataset/raw/master/test/data/stocks.csv\" {:key-fn keyword})
                       (vary-meta assoc
                                  :name \"stocks\"
@@ -57,12 +58,13 @@ _unnamed [5 3]:
             [tech.v3.dataset.impl.dataset :as ds-impl]
             [tech.v3.dataset.io.column-parsers :as col-parsers]
             [tech.v3.dataset.impl.column-base :as col-base]
+            [tech.v3.dataset.sql.datatypes :as sql-datatypes]
             [clojure.tools.logging :as log])
-  (:import [java.util List]
+  (:import [java.util List UUID]
            [org.roaringbitmap RoaringBitmap]
            [java.time Instant LocalDate LocalTime]
            [java.sql Connection ResultSetMetaData PreparedStatement
-            DatabaseMetaData ResultSet ParameterMetaData]
+            DatabaseMetaData ResultSet ParameterMetaData Timestamp Time Date]
            [tech.v3.dataset.io.column_parsers PParser]
            [tech.v3.dataset Text]))
 
@@ -70,7 +72,7 @@ _unnamed [5 3]:
 (set! *warn-on-reflection* true)
 
 
-(defn postgre-connect-str
+(defn postgre-sql-connect-str
   ^String [hoststr database user pwd]
   (format "jdbc:postgresql://%s/%s?user=%s&password=%s"
     hoststr database user pwd))
@@ -90,6 +92,16 @@ _unnamed [5 3]:
       (-> conn
           (.getMetaData)
           (.getDatabaseProductName)))))
+
+
+(declare result-set->dataset)
+
+
+(defn database-type-table
+  [^Connection conn]
+  (-> (result-set->dataset conn (-> (.getMetaData conn)
+                                    (.getTypeInfo)))
+      (ds/select-columns ["TYPE_NAME" "DATA_TYPE"])))
 
 
 (def default-sql-types {:int8 "tinyint"
@@ -113,14 +125,59 @@ _unnamed [5 3]:
                                dt-kwd)))))
 
 
-(def database-data* (atom {"PostgreSQL" {:uint8 :int16
-                                         :int8 :int16
-                                         :uint16 :int32
-                                         :uint32 :int64
-                                         :string "varchar"
-                                         :uuid {:sql-datatype "uuid"
-                                                ;;prepared statement insert sql
-                                                :insert-sql "? ::UUID"}}}))
+(defn column-generic-read
+  [col idx]
+  (col idx))
+
+
+(defn make-column-convert-read
+  [convert-fn]
+  (fn [col idx]
+    (when-let [retval (col idx)]
+      (convert-fn retval))))
+
+
+(defn generic-sql->column
+  [^ResultSet rs ^long sql-col-idx]
+  (.getObject rs sql-col-idx))
+
+
+(defn make-convert-sql->column
+  [convert-fn]
+  (fn [^ResultSet rs ^long sql-col-idx]
+    (when-let [item (.getObject rs sql-col-idx)]
+      (convert-fn item))))
+
+
+(def database-data*
+  (atom
+   ;;postgre has no byte column type
+   {"PostgreSQL"
+    {:uint8 :int16
+     :int8 :int16
+     :uint16 :int32
+     :uint32 :int64
+     :string "varchar"
+     :uuid {:sql-datatype "uuid"
+            ;;prepared statement insert sql
+            :insert-sql "? ::UUID"}
+     "int2" {:sql->column #(.getShort ^ResultSet %1 (unchecked-int %2))}}
+
+    "Microsoft SQL Server"
+    {:uint8 :int16
+     :uint16 :int32
+     :uint32 :int64
+     :instant "datetime2"
+     :uuid {:sql-datatype "uniqueidentifier"}
+     "uniqueidentifier" {:column->sql [(sql-datatypes/type-index "char")
+                                       #(str (%1 %2))]
+                         :sql->column (make-convert-sql->column
+                                       #(UUID/fromString (str %)))}
+     "datetime" {:column->sql [(sql-datatypes/type-index "datetime")
+                               #(Timestamp/from ^Instant (%1 %2))]}
+     "datetime2" {:column->sql [(sql-datatypes/type-index "datetime2")
+                                #(Timestamp/from ^Instant (%1 %2))]}}
+    }))
 
 
 (defn column-metadata->sql-datatype
@@ -394,28 +451,17 @@ via the options map or as the key :primary-key in the dataset metadata")))
   ([conn-or-db-name dataset]))
 
 
-(defn column-generic-read
-  [col idx]
-  (col idx))
-
-
-(defn make-column-convert-read
-  [convert-fn]
-  (fn [col idx]
-    (when-let [retval (col idx)]
-      (convert-fn retval))))
-
-
 (defn sql-datatype->column-read-fn
   [database-name sql-datatype]
-  (if-let [read-fn (get-in database-data* [database-name sql-datatype :column->sql])]
+  (if-let [read-fn (get-in @database-data* [database-name sql-datatype :column->sql])]
     read-fn
-    (case sql-datatype
-      "text" (make-column-convert-read str)
-      "date" (make-column-convert-read #(java.sql.Date/valueOf ^LocalDate %))
-      "time" (make-column-convert-read #(java.sql.Time/valueOf ^LocalTime %))
-      "timestamp" (make-column-convert-read #(java.sql.Timestamp/from ^Instant %))
-      column-generic-read)))
+    [(sql-datatypes/type-index sql-datatype)
+     (case sql-datatype
+       "text" (make-column-convert-read str)
+       "date" (make-column-convert-read #(java.sql.Date/valueOf ^LocalDate %))
+       "time" (make-column-convert-read #(java.sql.Time/valueOf ^LocalTime %))
+       "timestamp" (make-column-convert-read #(java.sql.Timestamp/from ^Instant %))
+       column-generic-read)]))
 
 
 (defn column->sql-fn
@@ -463,8 +509,20 @@ via the options map or as the key :primary-key in the dataset metadata")))
                      (map-indexed
                       (fn [idx col]
                         (let [sql-idx (inc (long idx))
-                              read-fn (column->sql-fn database-name (meta col))]
-                          #(.setObject stmt sql-idx (read-fn col %)))))
+                              cmeta (meta col)
+                              [sql-type-index read-fn] (column->sql-fn database-name cmeta)
+                              sql-type-index (int sql-type-index)
+                              cname (:name cmeta)
+                              missing (ds/missing col)]
+                          #(try
+                             (let [row-idx (int %)]
+                               (if (.contains missing row-idx)
+                                 (.setNull stmt sql-idx sql-type-index)
+                                 (.setObject stmt sql-idx (read-fn col row-idx)
+                                             sql-type-index)))
+                             (catch Throwable e
+                               (throw (ex-info (format "Failed to insert column %s" cname)
+                                               {:error e})))))))
                      (object-array))
                 n-cols (alength appliers)]
             (dotimes [row-idx n-rows]
@@ -503,18 +561,6 @@ via the options map or as the key :primary-key in the dataset metadata")))
      :nullable? (.isNullable metadata sql-idx)}))
 
 
-(defn generic-sql->column
-  [^ResultSet rs ^long sql-col-idx]
-  (.getObject rs sql-col-idx))
-
-
-(defn make-convert-sql->column
-  [convert-fn]
-  (fn [^ResultSet rs ^long sql-col-idx]
-    (when-let [item (.getObject rs sql-col-idx)]
-      (convert-fn item))))
-
-
 (defn- sql->column-fn
   [database-name result-set-metadata options]
   (if-let [result-read-fn (get-in options [:parser-fn (:label result-set-metadata)])]
@@ -533,10 +579,12 @@ via the options map or as the key :primary-key in the dataset metadata")))
 
 
 (defn- iterate-res-set
-  [^ResultSet rs max-batch-idx col-data close? options]
+  [^ResultSet rs max-batch-idx col-data options]
   (let [max-batch-idx (long max-batch-idx)
+        close? (get options :close? true)
         parsers (->> col-data
-                     (map (fn [{:keys [name read-fn col-idx]}]
+                     (map (fn [{:keys [name read-fn col-idx
+                                       result-set-metadata]}]
                             (let [^PParser parser
                                   (col-parsers/promotional-object-parser name nil)
                                   sql-idx (int (inc col-idx))]
@@ -547,7 +595,9 @@ via the options map or as the key :primary-key in the dataset metadata")))
                                      (.addValue parser row-idx cval))))
                                 ([n-rows n-rows]
                                  (-> (.finalize parser n-rows)
-                                     (assoc :tech.v3.dataset/name name)))))))
+                                     (assoc :tech.v3.dataset/name name
+                                            :tech.v3.dataset/metadata {:result-set-metadata
+                                                                       result-set-metadata})))))))
                      (object-array))
         n-cols (alength parsers)]
     (loop [continue? (.next rs)
@@ -555,38 +605,37 @@ via the options map or as the key :primary-key in the dataset metadata")))
       (when continue?
         (dotimes [col-idx n-cols]
           ((aget parsers col-idx) local-row-idx)))
-      (let [next-row-idx (unchecked-inc local-row-idx)]
-        (if (and continue? (< (.getRow rs) max-batch-idx))
-          (recur (.next rs) next-row-idx)
-          (do
-            (when (and (not continue?) close?)
-              (.close rs))
-            (cons (ds/new-dataset
-                   options
-                   (map #(% next-row-idx next-row-idx) parsers))
-                  (lazy-seq
-                   (iterate-res-set rs (+ max-batch-idx (long (options :batch-size))) close?
-                                    options)))))))))
+      (if (and continue? (< (.getRow rs) max-batch-idx))
+        (recur (.next rs) (unchecked-inc local-row-idx))
+        (do
+          (when (and (not continue?) close?)
+            (.close rs))
+          (cons (ds/new-dataset
+                 options
+                 (map #(% local-row-idx local-row-idx) parsers))
+                (lazy-seq
+                 (iterate-res-set rs (+ max-batch-idx (long (options :batch-size))) close?
+                                  options))))))))
 
 
 (defn result-set->dataset-seq
   ([conn-or-db-name ^ResultSet results options]
    (let [batch-size (get options :batch-size 64000)
          metadata (.getMetaData results)
-         key-fn (get-in options :key-fn identity)
+         key-fn (get options :key-fn identity)
          options (dissoc options :key-fn)
          database-name (database-name conn-or-db-name)
-         close? (get options :close? true)
          column-data
          (->> (range (.getColumnCount metadata))
-              (map-indexed (fn [col-idx]
-                             (let [res-meta (-> (result-set-metadata->data metadata col-idx)
-                                                (update :label key-fn))
-                                   res-read-fn (sql->column-fn database-name res-meta)
-                                   sql-idx (int (inc col-idx))]
-                               {:name (res-meta :label)
-                                :col-idx col-idx
-                                :read-fn #(res-read-fn results sql-idx)}))))]
+              (map (fn [col-idx]
+                     (let [res-meta (-> (result-set-metadata->data metadata col-idx)
+                                        (update :label key-fn))
+                           res-read-fn (sql->column-fn database-name res-meta options)
+                           sql-idx (int (inc col-idx))]
+                       {:name (res-meta :label)
+                        :col-idx col-idx
+                        :result-set-metadata res-meta
+                        :read-fn #(res-read-fn results sql-idx)}))))]
      (iterate-res-set results batch-size column-data
                       (assoc options :batch-size batch-size))))
   ([conn-or-db-name results]

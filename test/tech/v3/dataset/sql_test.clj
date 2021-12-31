@@ -12,7 +12,8 @@
             [next.jdbc :as jdbc]
             [clojure.test :refer [deftest is]])
   (:import [java.util UUID]
-           [tech.v3.dataset Text]))
+           [tech.v3.dataset Text]
+           [java.time LocalTime]))
 
 
 (defn- uuid-table-name
@@ -35,24 +36,51 @@
                      :text (map (comp #(Text. %) str) (range 10))
                      :uuids (repeatedly 10 #(UUID/randomUUID))
                      :instants (repeatedly dtype-dt/instant)
-                     :local-dates (repeatedly dtype-dt/local-date)
-                     :local-times (repeatedly dtype-dt/local-time)})
+                     ;;sql doesn't support dash-case
+                     :local_dates (repeatedly dtype-dt/local-date)
+                     ;;some sql engines (or the jdbc api) don't support more than second
+                     ;;resolution for sql time objects
+                     :local_times (->> (repeatedly dtype-dt/local-time)
+                                       (map (fn [^LocalTime lt]
+                                              (LocalTime/ofSecondOfDay
+                                               (.toSecondOfDay lt)))))})
       (vary-meta assoc
                  :primary-key :uuids
                  :name :testtable)))
 
 
+(defmacro with-temp-table
+  [table-var & code]
+  `(let [~table-var (uuid-table-name)]
+     (try
+       ~@code
+       (finally
+         (try
+           (sql/drop-table! (dev-conn) ~table-var)
+           (catch Throwable e# nil))))))
+
+
 (def-db-test base-datatype-test
-  (let [ds (supported-datatype-ds)]))
+  (with-temp-table table-name
+    (let [ds (-> (supported-datatype-ds)
+                 (vary-meta assoc :name table-name))]
+      (sql/create-table! (dev-conn) ds)
+      (sql/insert-dataset! (dev-conn) ds)
+      (let [sql-ds (-> (sql/sql->dataset (dev-conn)
+                                         (format "Select * from %s" table-name)
+                                         {:key-fn keyword})
+                       (ds/sort-by-column :longs))]
+        (doseq [column (vals ds)]
+          (is (= (vec column)
+                 (vec (sql-ds (:name (meta column)))))))))))
 
 
 (def-db-test stocks-dataset
-  (let [table-name (uuid-table-name)
-        stocks (-> (ds/->dataset "test/data/stocks.csv")
-                   (vary-meta assoc
-                              :name table-name
-                              :primary-keys ["date" "symbol"]))]
-    (try
+  (with-temp-table table-name
+    (let [stocks (-> (ds/->dataset "test/data/stocks.csv")
+                     (vary-meta assoc
+                                :name table-name
+                                :primary-keys ["date" "symbol"]))]
       (sql/create-table! (dev-conn) stocks)
       (sql/insert-dataset! (dev-conn) stocks)
       (let [sql-stocks (sql/sql->dataset
@@ -68,19 +96,15 @@
                                      (get % "symbol")))]
         (is (= (ds/row-count sql-stocks)
                (ds/row-count stocks)))
-        (is (dfn/equals (stocks "price") (sql-stocks "price"))))
-      (finally
-        (try
-          (sql/drop-table! (dev-conn) stocks)
-          (catch Throwable e nil))))))
+        (is (dfn/equals (stocks "price") (sql-stocks "price")))))))
 
 
 (def-db-test small-missing
-  (let [test-ds (ds/->dataset [{:a 1 :b 2}
-                               {:b 3}
-                               {:a 4}]
-                              {:dataset-name (uuid-table-name)})]
-    (try
+  (with-temp-table table-name
+    (let [test-ds (ds/->dataset [{:a 1 :b 2}
+                                 {:b 3}
+                                 {:a 4}]
+                                {:dataset-name table-name})]
       (sql/create-table! (dev-conn) test-ds)
       (sql/insert-dataset! (dev-conn) test-ds)
       (let [sql-ds (sql/sql->dataset
@@ -93,24 +117,22 @@
         (is (= (vec (test-ds :a))
                (vec (sql-ds "a"))))
         (is (= (vec (test-ds :b))
-               (vec (sql-ds "b")))))
-      (finally
-        (try
-          (sql/drop-table! (dev-conn) test-ds)
-          (catch Throwable e nil))))))
+               (vec (sql-ds "b"))))))))
+
 
 (def-db-test ames-ds
-  (let [test-ds (-> (ds/->dataset "test/data/ames-train.csv.gz"
-                                  {:dataset-name (uuid-table-name)})
-                    (ds/select-rows (range 20))
-                    ;;Append an 'a_' to the start of every column name because
-                    ;;these names start with numbers
-                    (#(ds/select-columns
-                       % (->> (ds/column-names %)
-                              (map (fn [^String cname]
-                                     [cname (str "a_" (.toLowerCase cname))]))
-                              (into {})))))]
-    (try
+  (with-temp-table table-name
+    (let [test-ds (-> (ds/->dataset "test/data/ames-train.csv.gz"
+                                    {:dataset-name table-name})
+                      (ds/select-rows (range 20))
+                      ;;Append an 'a_' to the start of every column name because
+                      ;;these names start with numbers
+                      (#(ds/select-columns
+                         % (->> (ds/column-names %)
+                                (map (fn [^String cname]
+                                       [cname (str "a_" (.toLowerCase cname))]))
+                                (into {})))))
+          n-rows (ds/row-count test-ds)]
       (sql/create-table! (dev-conn) test-ds)
       (sql/insert-dataset! (dev-conn) test-ds)
       (let [sql-ds (sql/sql->dataset (dev-conn)
@@ -121,16 +143,14 @@
         (doseq [col (ds/columns test-ds)]
           (let [cname (ds-col/column-name col)
                 sql-col (sql-ds cname)
-                col-dtype (dtype/get-datatype col)
-                col-dtype (if (= col-dtype :int16)
-                            :int32
-                            col-dtype)]
+                col-dtype (dtype/get-datatype col)]
             (is (= (ds-col/missing col)
                    (ds-col/missing sql-col))
                 (format "Missing for column %s" cname))
-            (is (= col-dtype
-                   (dtype/get-datatype sql-col))
-                (format "Datatype for column %s" cname))
+            (when-not (= n-rows (dtype/ecount (ds/missing col)))
+              (is (= col-dtype
+                     (dtype/get-datatype sql-col))
+                  (format "Datatype for column %s" cname)))
             (let [src-rdr col
                   dst-rdr sql-col]
               (if (casting/numeric-type? col-dtype)
@@ -139,93 +159,12 @@
                     (format "Numeric equals for column %s" cname))
                 (is (= (vec src-rdr)
                        (vec dst-rdr))
-                    (format "Object equals for column %s" cname)))))))
-      (finally
-        (try
-          (sql/drop-table! (dev-conn) test-ds)
-          (catch Throwable e nil))))))
+                    (format "Object equals for column %s" cname))))))))))
 
 
-(def-db-test sql-uuid-test
-  (let [test-ds (ds/->dataset [{:a 1 :b (UUID/randomUUID)}
-                               {:b (UUID/randomUUID)}]
-                              {:dataset-name (uuid-table-name)})]
-    (try
-      (sql/create-table! (dev-conn) test-ds)
-      (sql/insert-dataset! (dev-conn) test-ds)
-      (let [sql-ds (sql/sql->dataset
-                    (dev-conn) (format "Select * from %s"
-                                       (ds/dataset-name test-ds)))]
-        (is (= (ds/row-count sql-ds)
-               (ds/row-count test-ds)))
-        (is (= (ds/missing test-ds)
-               (ds/missing sql-ds)))
-        (is (= (vec (test-ds :a))
-               (vec (sql-ds "a"))))
-        (is (= (vec (test-ds :b))
-               (vec (sql-ds "b")))))
-      (finally
-        (try
-          (sql/drop-table! (dev-conn) test-ds)
-          (catch Throwable e nil))))))
+;;Postgre specific test
 
-
-(def-db-test zoned-date-time
-  (let [test-ds (ds/->dataset [{:a 1 :b (dtype-dt/zoned-date-time)}
-                               {:a 2 :b (dtype-dt/zoned-date-time)}]
-                              {:dataset-name (uuid-table-name)})]
-
-    (try
-      (sql/create-table! (dev-conn) test-ds)
-      (sql/insert-dataset! (dev-conn) test-ds)
-      (let [sql-ds (sql/sql->dataset
-                    (dev-conn) (format "Select * from %s"
-                                       (ds/dataset-name test-ds)))]
-        (is (= (ds/row-count sql-ds)
-               (ds/row-count test-ds)))
-        (is (= (ds/missing test-ds)
-               (ds/missing sql-ds)))
-        (is (= (vec (test-ds :a))
-               (vec (sql-ds "a"))))
-        (is (= (vec (map #(-> %
-                            dtype-dt/zoned-date-time->instant
-                            dtype-dt/instant->milliseconds-since-epoch)
-                      (test-ds :b)))
-                (vec (map #(-> %
-                             dtype-dt/instant->milliseconds-since-epoch)
-                       (sql-ds "b"))))))
-      (finally
-        (try
-          (sql/drop-table! (dev-conn) test-ds)
-          (catch Throwable e nil))))))
-
-
-(def-db-test duration
-  (let [test-ds (ds/->dataset [{:a 1 :b (dtype-dt/milliseconds->duration 400)}
-                               {:a 2 :b (dtype-dt/milliseconds->duration 10000)}]
-                              {:dataset-name (uuid-table-name)})]
-
-    (try
-      (sql/create-table! (dev-conn) test-ds)
-      (sql/insert-dataset! (dev-conn) test-ds)
-      (let [sql-ds (sql/sql->dataset
-                    (dev-conn) (format "Select * from %s"
-                                       (ds/dataset-name test-ds)))]
-        (is (= (ds/row-count sql-ds)
-               (ds/row-count test-ds)))
-        (is (= (ds/missing test-ds)
-               (ds/missing sql-ds)))
-        (is (= (vec (test-ds :a))
-               (vec (sql-ds "a"))))
-        (is (= (vec (test-ds :b))
-               (vec (sql-ds "b")))))
-      (finally
-        (try
-          (sql/drop-table! (dev-conn) test-ds)
-          (catch Throwable e nil))))))
-
-
-(def-db-test jsonb
+#_(def-db-test jsonb
   (try
     (let [test-ds (-> (ds/->dataset [{:jsondata {:a 1 :b 2}}
                                      {:jsondata {:c 2 :d 3}}]
@@ -248,27 +187,6 @@
 
 
 (comment
-
-  (defn basic-dt-result-set
-    [db-kwd]
-    (let [conn (sql-utils/connect db-kwd)
-          db-name (sql-impl/database-name conn)]
-      (try (sql-impl/execute-update!
-            conn "create table dtt (
-i16 smallint, i32 int, i64 bigint,
-f32 float, f64 double precision,
-str varchar,
-txt text,
-ts timestamp,
-dt date,
-tt time)")
-           (sql-impl/execute-update!
-            conn "insert into dtt values
-(0, 0, 0, 0.0, 0.0, 'hello', 'text string long',
- '01-01-1970', '01-01-1970', '06:30:30')")
-           (catch Throwable e (println e)))
-      (let [stmt (.createStatement conn)]
-        (.executeQuery stmt "select * from dtt"))))
 
   (def datasource (jdbc/get-datasource
                    {:dbtype   "postgres"
