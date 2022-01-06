@@ -186,12 +186,10 @@ column's metadata.</p>
 <li><code>sql-type-index</code> - type index to use to set missing.  See <a href="datatype-type-table">datatype-type-table</a>
 for a way to find the sql type index from the sql datatype.</li>
 <li><code>result-set-read-fn</code> - function that takes a result set and a column index and returns
-the data in dtype-next space so for example returns a <code>java.time.LocalTime</code> object as opposed
+the data in dtype-next space e.g. a <code>java.time.LocalTime</code> object as opposed
 to a <code>java.sql.Time</code> object.</li>
-<li><code>col-read-fn</code> - Function takes a column and a row idx and returns data as an sql datatype</li>
-</ul>
-<ul>
-<li>for instance a <code>java.sql.Time</code> object as opposed to a <code>java.time.LocalTime</code> object.</li>
+<li><code>col-read-fn</code> - Function takes a column and a row idx and returns data as an sql datatype
+e.g. a <code>java.sql.Time</code> object as opposed to a <code>java.time.LocalTime</code> object.</li>
 </ul>
 <p>Your type should be a proper tech.v3.datatype datatype meaning it is either an existing
 datatype or added via tech.v3.datatype.casting/add-object-datatype!.</p>

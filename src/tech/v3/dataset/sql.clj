@@ -239,10 +239,10 @@ _unnamed [5 3]:
   * `sql-type-index` - type index to use to set missing.  See [[datatype-type-table]]
     for a way to find the sql type index from the sql datatype.
   * `result-set-read-fn` - function that takes a result set and a column index and returns
-  the data in dtype-next space so for example returns a `java.time.LocalTime` object as opposed
+  the data in dtype-next space e.g. a `java.time.LocalTime` object as opposed
   to a `java.sql.Time` object.
   * `col-read-fn` - Function takes a column and a row idx and returns data as an sql datatype
-  - for instance a `java.sql.Time` object as opposed to a `java.time.LocalTime` object.
+  e.g. a `java.sql.Time` object as opposed to a `java.time.LocalTime` object.
 
 
   Your type should be a proper tech.v3.datatype datatype meaning it is either an existing
