@@ -64,12 +64,10 @@ https://github.com/techascent/tech.ml.dataset/raw/master/test/data/stocks.csv [5
 |   MSFT | 2000-05-01 | 25.45 |
 user> (require '[tech.ml.dataset.sql :as ds-sql])
 nil
-user> (require '[tech.ml.dataset.sql.impl :as ds-sql-impl])
-nil
 user> ;;Connections should be created with auto-commit false so that inserts are batched.
 user> (require '[next.jdbc :as jdbc])
 nil
-user> (def dev-conn (doto (-> (ds-sql-impl/jdbc-postgre-connect-str
+user> (def dev-conn (doto (-> (ds-sql/postgre-connect-str
                                "localhost:5432" "dev-user"
                                "dev-user" "unsafe-bad-password")
                               (jdbc/get-connection {:auto-commit false}))
@@ -84,7 +82,7 @@ user> (def ds (with-meta ds
                        :primary-key ["symbol" "date"])))
 #'user/ds
 user> ;;see the sql created for this table
-user> (println (ds-sql-impl/create-sql ds))
+user> (println (ds-sql/create-sql ds))
 CREATE TABLE stocks (
  symbol varchar,
  date date,
