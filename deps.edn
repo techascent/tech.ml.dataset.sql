@@ -4,9 +4,8 @@
   {:extra-deps {org.postgresql/postgresql  {:mvn/version "42.2.12"}
                 ;;Various users of the tmd system are still on jdk-8
                 com.microsoft.sqlserver/mssql-jdbc {:mvn/version "9.4.1.jre8"}
-                org.duckdb/duckdb_jdbc {:mvn/version "0.3.1"}
                 seancorfield/next.jdbc     {:mvn/version "1.0.424"}
-                techascent/tech.ml.dataset {:mvn/version "6.042"}}
+                techascent/tech.ml.dataset {:mvn/version "6.043"}}
    :extra-paths ["test"]}
   :test
   {:extra-deps {com.cognitect/test-runner
@@ -21,7 +20,7 @@
    :exec-fn hf.depstar/jar
    :exec-args {:group-id "techascent"
                :artifact-id "tech.ml.dataset.sql"
-               :version "6.000"
+               :version "6.043"
                :sync-pom true
                :jar "target/tech.ml.dataset.sql.jar"}}
   ;;deploy to clojars
@@ -43,7 +42,8 @@
   :codox
   {:extra-deps {codox-theme-rdash/codox-theme-rdash {:mvn/version "0.1.2"}
                 com.cnuernber/codox {:mvn/version "1.000"}
-                cider/cider-nrepl {:mvn/version "0.26.0"}}
+                cider/cider-nrepl {:mvn/version "0.26.0"}
+                techascent/tech.ml.dataset {:mvn/version "6.043"}}
    :exec-fn codox.main/-main
    :exec-args {:arg-paths [[:aliases :depstar :exec-args]]
                :description "SQL bindings for tech.ml.dataset"
@@ -52,4 +52,4 @@
                :source-paths ["src"]
                :output-path "docs"
                :source-uri "https://github.com/techascent/tech.ml.dataset.sql/blob/master/{filepath}#L{line}"
-               :namespaces [tech.v3.dataset.sql]}}}}
+               :namespaces [tech.v3.dataset.sql tech.v3.dataset.sql.datatypes]}}}}

@@ -3,6 +3,6 @@
 set -e
 
 scripts/run-tests
-clj -A:dev -X:codox
+clj -X:codox
 clj -X:depstar
 clj -X:deploy

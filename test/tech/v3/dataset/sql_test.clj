@@ -147,10 +147,9 @@
             (is (= (ds-col/missing col)
                    (ds-col/missing sql-col))
                 (format "Missing for column %s" cname))
-            (when-not (= n-rows (dtype/ecount (ds/missing col)))
-              (is (= col-dtype
-                     (dtype/get-datatype sql-col))
-                  (format "Datatype for column %s" cname)))
+            (is (= col-dtype
+                   (dtype/get-datatype sql-col))
+                (format "Datatype for column %s" cname))
             (let [src-rdr col
                   dst-rdr sql-col]
               (if (casting/numeric-type? col-dtype)
@@ -160,6 +159,23 @@
                 (is (= (vec src-rdr)
                        (vec dst-rdr))
                     (format "Object equals for column %s" cname))))))))))
+
+
+(def-db-test batch-size
+  (with-temp-table table-name
+    (let [test-ds (ds/->dataset {:a (range 100)}
+                                {:dataset-name table-name})]
+      (sql/create-table! (dev-conn) test-ds)
+      (sql/insert-dataset! (dev-conn) test-ds)
+      (let [ds-seq (sql/sql->dataset-seq (dev-conn) (str "select * from " table-name)
+                                         {:batch-size 25
+                                          :key-fn keyword})
+            full-ds (apply ds/concat ds-seq)]
+        ;;Due to iterator design returns one empty dataset.
+        (is (= 5 (count ds-seq)))
+        (is (= 100 (ds/row-count full-ds)))
+        (is (= (vec (test-ds :a))
+               (vec (full-ds :a))))))))
 
 
 ;;Postgre specific test

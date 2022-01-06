@@ -1,6 +1,51 @@
 (ns tech.v3.dataset.sql
   "Pathways to transform dataset to and from SQL databases.  Built directly on
-  java.sql interfaces.
+  java.sql interfaces.  Generically SQL doesn't support very many datatypes but
+  an effort has been made to enable database-specific support for these base datatypes:
+
+  * Integer Types - `:int16`, `:int32`, `:int64`
+  * Float Types - `:float32`, `:float64`
+  * String, Text
+  * LocalDate (date), Instant (database specific, defaults to timestamp), LocalTime (time).
+  * UUID (uuid in postgres, uniqueidentifier in sql server)
+
+
+  Users can serialize result sets into one dataset or a sequence of datasets depending
+  on their downstream use case.
+
+
+## Column Metadata For Writing To The Database
+
+  For creating tables and uploading data to the database column metadata may be used
+  to extend how the system writes data.
+
+  * `:sql-datatype` - Change the sql datatype used during create-table.  This string
+  will be written in verbatim into the create-table sql.
+  * `:column->sql` - pair of *integer* sql type and function that takes a column and row and
+  must return a datatype in the SQL space of `sql-datatype`.  To find the integer sql type
+  see the [[tech.v3.datatset.sql.datatypes]] namespace or use [[database-type-table]] to find
+  the type table for your particular database.
+  * `:insert-sql` - When creating the prepared statement the default will be to use `?` but
+  users can override this to setup specialized types in the prepared statement.  For example
+  the postgres UUID type requires `? ::UUID` in order to correctly serialize.
+
+
+## Metadata For Reading A ResultSet
+
+  When reading the result set the normal database option may be used such as `key-fn` and
+  `dataset-name`.  In addition, similar to parsing datasets via `->dataset` users can pass
+  in a keyed map as `:parser-fn` in which case the keys must match the post-key-fn'd
+  result column name.  Entries in `parser-fn` must be tuples of
+  `[datatype result-set-read-fn]` where `result-set-read-fn` takes a resultset and a column
+  index and returns data of the appropriate datatype.
+
+  If you are unsure of the datatype
+  you can return `nil` for the datatype and the system will divine the datatype to use
+  from the return value of `result-set-read-fn`.  This has the drawback that columns
+  with all missing values will be `:boolean` columns as per the dataset default and thus
+  this may break round-tripping.
+
+
 
 ```clojure
 
@@ -85,6 +130,7 @@ _unnamed [5 3]:
 
 
 (defn database-name
+  "Return the database name for this connection."
   [conn]
   (if (string? conn)
     conn
@@ -98,13 +144,15 @@ _unnamed [5 3]:
 
 
 (defn database-type-table
+  "Return table mapping sql datatype to sql datatype integer for all datatypes
+  this database supports."
   [^Connection conn]
   (-> (result-set->dataset conn (-> (.getMetaData conn)
                                     (.getTypeInfo)))
       (ds/select-columns ["TYPE_NAME" "DATA_TYPE"])))
 
 
-(def default-sql-types {:int8 "tinyint"
+(def ^:private default-sql-types {:int8 "tinyint"
                         :int16 "smallint"
                         :int32 "int"
                         :int64 "bigint"
@@ -117,7 +165,7 @@ _unnamed [5 3]:
                         :instant "timestamp"})
 
 
-(defn default-sql-datatype
+(defn- default-sql-datatype
   [dt-kwd]
   (if-let [retval (get default-sql-types dt-kwd)]
     retval
@@ -125,31 +173,31 @@ _unnamed [5 3]:
                                dt-kwd)))))
 
 
-(defn column-generic-read
+(defn- column-generic-read
   [col idx]
   (col idx))
 
 
-(defn make-column-convert-read
+(defn- make-column-convert-read
   [convert-fn]
   (fn [col idx]
     (when-let [retval (col idx)]
       (convert-fn retval))))
 
 
-(defn generic-sql->column
+(defn- generic-sql->column
   [^ResultSet rs ^long sql-col-idx]
   (.getObject rs sql-col-idx))
 
 
-(defn make-convert-sql->column
+(defn- make-convert-sql->column
   [convert-fn]
   (fn [^ResultSet rs ^long sql-col-idx]
     (when-let [item (.getObject rs sql-col-idx)]
       (convert-fn item))))
 
 
-(def database-data*
+(def ^:private database-data*
   (atom
    ;;postgre has no byte column type
    {"PostgreSQL"
@@ -161,7 +209,7 @@ _unnamed [5 3]:
      :uuid {:sql-datatype "uuid"
             ;;prepared statement insert sql
             :insert-sql "? ::UUID"}
-     "int2" {:sql->column #(.getShort ^ResultSet %1 (unchecked-int %2))}}
+     "int2" {:sql->column [:int16 #(.getShort ^ResultSet %1 (unchecked-int %2))]}}
 
     "Microsoft SQL Server"
     {:uint8 :int16
@@ -171,8 +219,8 @@ _unnamed [5 3]:
      :uuid {:sql-datatype "uniqueidentifier"}
      "uniqueidentifier" {:column->sql [(sql-datatypes/type-index "char")
                                        #(str (%1 %2))]
-                         :sql->column (make-convert-sql->column
-                                       #(UUID/fromString (str %)))}
+                         :sql->column [:uuid (make-convert-sql->column
+                                              #(UUID/fromString (str %)))]}
      "datetime" {:column->sql [(sql-datatypes/type-index "datetime")
                                #(Timestamp/from ^Instant (%1 %2))]}
      "datetime2" {:column->sql [(sql-datatypes/type-index "datetime2")
@@ -180,7 +228,7 @@ _unnamed [5 3]:
     }))
 
 
-(defn column-metadata->sql-datatype
+(defn- column-metadata->sql-datatype
   [database-name column-metadata]
   (if-let [sql-dt (get column-metadata :sql-datatype)]
     sql-dt
@@ -207,13 +255,13 @@ _unnamed [5 3]:
     (str item)))
 
 
-(defn sanitize
+(defn- sanitize
   ^String [item]
   (-> (->str item)
       (.replace "-" "_")))
 
 
-(defn table-name
+(defn- table-name
   (^String [dataset options]
    (if (string? dataset)
      dataset
@@ -222,7 +270,7 @@ _unnamed [5 3]:
    (table-name dataset nil)))
 
 
-(defn primary-key
+(defn- primary-key
   ([dataset options]
    (when (nil? dataset)
      (throw (Exception. "No dataset provided")))
@@ -394,7 +442,7 @@ _unnamed [5 3]:
    (ensure-table! conn dataset {})))
 
 
-(defn column-metadata->insert-sql
+(defn- column-metadata->insert-sql
   ^String [database-name colmeta]
   (if-let [ins-sql (:insert-sql colmeta)]
     ins-sql
@@ -451,7 +499,7 @@ via the options map or as the key :primary-key in the dataset metadata")))
   ([conn-or-db-name dataset]))
 
 
-(defn sql-datatype->column-read-fn
+(defn- sql-datatype->column-read-fn
   [database-name sql-datatype]
   (if-let [read-fn (get-in @database-data* [database-name sql-datatype :column->sql])]
     read-fn
@@ -464,7 +512,7 @@ via the options map or as the key :primary-key in the dataset metadata")))
        column-generic-read)]))
 
 
-(defn column->sql-fn
+(defn- column->sql-fn
   [database-name column-metadata]
   (if-let [read-fn (get column-metadata :column->sql)]
     read-fn
@@ -477,6 +525,9 @@ via the options map or as the key :primary-key in the dataset metadata")))
   drawn from the rows of the dataset.  For this to work correctly, the
   connection needs to have autoCommit set to false and the sql statement's datatypes need
   to match the dataset datatypes.
+
+  See namespace documentation about column metadata and various options that may be
+  associated on a per-column basis to change the way data is uploaded.
 
   * conn - java.sql.Connection
   * stmt-or-sql - Either a prepared statement or a string in which case
@@ -540,6 +591,9 @@ via the options map or as the key :primary-key in the dataset metadata")))
 
 
 (defn insert-dataset!
+  "Insert a dataset into a table.  Column datatypes will be inferred from the
+  dataset datatypes or may be provided as metadata on each column.  See namespace
+  documentation for `:column->sql`."
   ([conn dataset options]
    (execute-prepared-statement-batches! conn
                                         (insert-sql conn dataset options)
@@ -549,6 +603,9 @@ via the options map or as the key :primary-key in the dataset metadata")))
 
 
 (defn result-set-metadata->data
+  "Given result set metadata and a column index return the metadata.  Note that the
+  result set metadata for a particular column is save as :result-set-metadata in the
+  column's metadata."
   [^ResultSetMetaData metadata col-idx]
   (let [sql-idx (int (inc col-idx))]
     {:name (.getColumnName metadata sql-idx )
@@ -570,35 +627,48 @@ via the options map or as the key :primary-key in the dataset metadata")))
                                                      :sql->column])]
       result-read-fn
       (if (= (:type-name result-set-metadata) "text")
-        (make-convert-sql->column #(Text. (str %)))
+        [:text (make-convert-sql->column #(Text. (str %)))]
         (case (:class-name result-set-metadata)
-          "java.sql.Time" (make-convert-sql->column #(.toLocalTime ^java.sql.Time %))
-          "java.sql.Date" (make-convert-sql->column #(.toLocalDate ^java.sql.Date %))
-          "java.sql.Timestamp" (make-convert-sql->column #(.toInstant ^java.sql.Timestamp %))
-          generic-sql->column)))))
+          "java.sql.Time"
+          [:packed-local-time (make-convert-sql->column #(.toLocalTime ^java.sql.Time %))]
+          "java.sql.Date"
+          [:packed-local-date (make-convert-sql->column #(.toLocalDate ^java.sql.Date %))]
+          "java.sql.Timestamp"
+          [:packed-instant (make-convert-sql->column #(.toInstant ^java.sql.Timestamp %))]
+          "java.lang.String" [:string generic-sql->column]
+          "java.lang.Byte" [:int8 generic-sql->column]
+          "java.lang.Short" [:int16 generic-sql->column]
+          "java.lang.Integer" [:int32 generic-sql->column]
+          "java.lang.Long" [:int64 generic-sql->column]
+          "java.lang.Float" [:float32 generic-sql->column]
+          "java.lang.Double" [:float64 generic-sql->column]
+          [nil generic-sql->column])))))
 
 
 (defn- iterate-res-set
   [^ResultSet rs max-batch-idx col-data options]
   (let [max-batch-idx (long max-batch-idx)
         close? (get options :close? true)
-        parsers (->> col-data
-                     (map (fn [{:keys [name read-fn col-idx
-                                       result-set-metadata]}]
-                            (let [^PParser parser
-                                  (col-parsers/promotional-object-parser name nil)
-                                  sql-idx (int (inc col-idx))]
-                              (fn
-                                ([row-idx]
-                                 (let [cval (read-fn)]
-                                   (when-not (.wasNull rs)
-                                     (.addValue parser row-idx cval))))
-                                ([n-rows n-rows]
-                                 (-> (.finalize parser n-rows)
-                                     (assoc :tech.v3.dataset/name name
-                                            :tech.v3.dataset/metadata {:result-set-metadata
-                                                                       result-set-metadata})))))))
-                     (object-array))
+        parsers
+        (->> col-data
+             (map (fn [{:keys [name read-fn col-idx datatype
+                               result-set-metadata]}]
+                    (let [^PParser parser
+                          (if datatype
+                            (col-parsers/make-fixed-parser name datatype nil)
+                            (col-parsers/promotional-object-parser name nil))
+                          sql-idx (int (inc col-idx))]
+                      (fn
+                        ([row-idx]
+                         (let [cval (read-fn)]
+                           (when-not (.wasNull rs)
+                             (.addValue parser row-idx cval))))
+                        ([n-rows n-rows]
+                         (-> (.finalize parser n-rows)
+                             (assoc :tech.v3.dataset/name name
+                                    :tech.v3.dataset/metadata {:result-set-metadata
+                                                               result-set-metadata})))))))
+             (object-array))
         n-cols (alength parsers)]
     (loop [continue? (.next rs)
            local-row-idx 0]
@@ -607,18 +677,40 @@ via the options map or as the key :primary-key in the dataset metadata")))
           ((aget parsers col-idx) local-row-idx)))
       (if (and continue? (< (.getRow rs) max-batch-idx))
         (recur (.next rs) (unchecked-inc local-row-idx))
-        (do
-          (when (and (not continue?) close?)
-            (.close rs))
-          (cons (ds/new-dataset
-                 options
-                 (map #(% local-row-idx local-row-idx) parsers))
+        (cons (ds/new-dataset
+               options
+               (map #(% local-row-idx local-row-idx) parsers))
+              (if continue?
                 (lazy-seq
-                 (iterate-res-set rs (+ max-batch-idx (long (options :batch-size))) close?
-                                  options))))))))
+                 (iterate-res-set rs (+ max-batch-idx (long (options :batch-size)))
+                                  col-data
+                                  options))
+                (do
+                  (when close?
+                    (.close rs)
+                    (when-let [^java.lang.AutoCloseable stmt (:statement options)]
+                      (.close stmt))))))))))
 
 
 (defn result-set->dataset-seq
+  "Given a result set return a sequence of datasets.  Each dataset will be at most
+  `:batch-size` num-rows in length.  Note that the statement will stay open as long as
+  the lazy sequence isn't fully realized which means if you do not realize the sequence
+  you will leave a hanging statement open.  There is currently no way to prematurely
+  end the dataset sequence and close the sql statement via the public API.
+
+  Options:
+
+  * `:batch-size` - defaults to 64000.  Returned datasets will be at most this number of
+  rows long.
+  * `:key-fn` - Apply this to the column names -- an example would be `keyword`.
+  * `:parser-fn` - Map of post-key-fn column-name to tuple of `[datatype result-set-read-fn]`
+  where result-set-read-fn takes a result-set and a column-index and must return data
+  of the appropriate datatype.  If the datatype is unknown then nil can be provided and the
+  dataset will use the widest datatype that will fit the returned data or `:boolean` if all
+  values are missing.
+  * `:statement` - The sql statement to close when finished.
+  * `:close?` - Close the result set when finished.  Defaults to true."
   ([conn-or-db-name ^ResultSet results options]
    (let [batch-size (get options :batch-size 64000)
          metadata (.getMetaData results)
@@ -630,11 +722,13 @@ via the options map or as the key :primary-key in the dataset metadata")))
               (map (fn [col-idx]
                      (let [res-meta (-> (result-set-metadata->data metadata col-idx)
                                         (update :label key-fn))
-                           res-read-fn (sql->column-fn database-name res-meta options)
+                           [datatype res-read-fn]
+                           (sql->column-fn database-name res-meta options)
                            sql-idx (int (inc col-idx))]
                        {:name (res-meta :label)
                         :col-idx col-idx
                         :result-set-metadata res-meta
+                        :datatype datatype
                         :read-fn #(res-read-fn results sql-idx)}))))]
      (iterate-res-set results batch-size column-data
                       (assoc options :batch-size batch-size))))
@@ -643,6 +737,8 @@ via the options map or as the key :primary-key in the dataset metadata")))
 
 
 (defn result-set->dataset
+  "Given a result set return a dataset that serialized the entire resultset into
+  one dataset.  See options for [[result-set->dataset-seq]]."
   ([conn-or-db-name ^ResultSet results options]
    (-> (result-set->dataset-seq conn-or-db-name results
                                 (assoc options :batch-size Long/MAX_VALUE))
@@ -652,21 +748,27 @@ via the options map or as the key :primary-key in the dataset metadata")))
 
 
 (defn sql->dataset-seq
+  "Given a connection and an sql statement return a sequence of datasets.
+  See options for [[result-set->dataset-seq]]."
   ([^Connection conn sql options]
    (let [ac (.getAutoCommit conn)
          database-name (database-name conn)]
      (try
-       (with-open [statement (.createStatement conn)]
+       (let [statement (.createStatement conn)]
          (let [rs (.executeQuery statement sql)]
-           (result-set->dataset-seq database-name rs options)))
+           (result-set->dataset-seq database-name rs (assoc options :statement statement))))
        (catch Throwable e
-         (.rollback conn)
+         (try
+           (.rollback conn)
+           (catch Throwable e nil))
          (throw e)))))
   ([conn sql]
    (sql->dataset-seq conn sql nil)))
 
 
 (defn sql->dataset
+  "Given a connection and an sql statement return a single dataset.
+  See options for [[result-set->dataset-seq]]."
   ([^Connection conn sql options]
    (let [database-name (database-name conn)]
      (try
