@@ -7,6 +7,7 @@
             [tech.v3.datatype.casting :as casting]
             [tech.v3.datatype.datetime :as dtype-dt]
             [tech.v3.datatype :as dtype]
+            [tech.v3.datatype.casting :as casting]
             [tech.v3.dataset.sql-test-utils :refer [def-db-test dev-conn] :as sql-utils]
             [clojure.data.json :as json]
             [next.jdbc :as jdbc]
@@ -26,7 +27,8 @@
 
 (defn supported-datatype-ds
   []
-  (-> (ds/->dataset {:bytes (byte-array (range 10))
+  (-> (ds/->dataset {:boolean [true false true true false false true false false true]
+                     :bytes (byte-array (range 10))
                      :shorts (short-array (range 10))
                      :ints (int-array (range 10))
                      :longs (long-array (range 10))
@@ -180,26 +182,43 @@
 
 ;;Postgre specific test
 
-#_(def-db-test jsonb
-  (try
-    (let [test-ds (-> (ds/->dataset [{:jsondata {:a 1 :b 2}}
-                                     {:jsondata {:c 2 :d 3}}]
-                                    {:dataset-name "jsonb_test"})
-                      (ds/column-map :jsondata json/json-str :string identity)
-                      (ds/update-column :jsondata #(with-meta %
-                                                    {:sql-datatype "jsonb"})))]
-      (sql-impl/execute-update! (dev-conn)
-                                "create table jsonb_test (jsondata jsonb);")
-      (sql/insert-dataset! (dev-conn) test-ds)
-      (let [new-ds (sql/sql->dataset (dev-conn)
-                                     "select * from jsonb_test"
-                                     {:key-fn keyword})]
-        (is (= (mapv json/read-str (test-ds :jsondata))
-               (mapv json/read-str (new-ds :jsondata))))))
-    (finally
-      (try
-        (sql/drop-table! (dev-conn) "jsonb_test")
-        (catch Throwable e nil)))))
+(defrecord JSONData [json-data])
+(casting/add-object-datatype! :json-data JSONData)
+
+
+(deftest jsonb
+  (sql-utils/with-connection :postgre-sql
+    (let [json-type-index (-> (sql/database-type-table (dev-conn))
+                              (ds/filter-column "TYPE_NAME" #(= % "jsonb"))
+                              (ds/row-at -1)
+                              (get "DATA_TYPE"))]
+      (when-not json-type-index
+        (throw (Exception. "Failed to find json type index")))
+
+      (sql/set-datatype-mapping!
+       "PostgreSQL" :json-data "jsonb" json-type-index
+       (fn [^java.sql.ResultSet rs col-idx]
+         (when-let [json-obj (.getObject rs col-idx)]
+           (-> json-obj
+               (str)
+               (json/read-str :key-fn keyword)
+               (JSONData.))))
+       (fn [col idx]
+         (when-let [col-obj (col idx)]
+           (-> col-obj
+               (:json-data)
+               (json/write-str)))))
+
+      (with-temp-table table-name
+        (let [test-ds (ds/->dataset {:jsoncol [(JSONData. {:a 1 :b 2})
+                                                (JSONData. {:c 2 :d 3})]}
+                                    {:dataset-name table-name})]
+          (sql/create-table! (dev-conn) test-ds)
+          (sql/insert-dataset! (dev-conn) test-ds)
+          (let [nds (sql/sql->dataset (dev-conn) (str "select * from " table-name)
+                                      {:key-fn keyword})]
+            (is (= (vec (test-ds :jsoncol))
+                   (vec (nds :jsoncol))))))))))
 
 
 (comment

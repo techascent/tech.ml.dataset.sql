@@ -173,24 +173,26 @@ _unnamed [5 3]:
                                dt-kwd)))))
 
 
-(defn- column-generic-read
+(defn generic-column->sql
+  "Generic function that reads a value from a column."
   [col idx]
   (col idx))
 
 
-(defn- make-column-convert-read
+(defn make-convert-column->sql
   [convert-fn]
   (fn [col idx]
     (when-let [retval (col idx)]
       (convert-fn retval))))
 
 
-(defn- generic-sql->column
+(defn generic-sql->column
+  "Generic function that reads a column from a result set."
   [^ResultSet rs ^long sql-col-idx]
   (.getObject rs sql-col-idx))
 
 
-(defn- make-convert-sql->column
+(defn make-convert-sql->column
   [convert-fn]
   (fn [^ResultSet rs ^long sql-col-idx]
     (when-let [item (.getObject rs sql-col-idx)]
@@ -226,6 +228,131 @@ _unnamed [5 3]:
      "datetime2" {:column->sql [(sql-datatypes/type-index "datetime2")
                                 #(Timestamp/from ^Instant (%1 %2))]}}
     }))
+
+
+(defn set-datatype-mapping!
+  "Add a database specific datatype mapping.
+
+  * `datatype-name - name of database
+  * `datatype` - dtype-next datatype
+  * `sql-datatype` - sql datatype to to map to.
+  * `sql-type-index` - type index to use to set missing.  See [[datatype-type-table]]
+    for a way to find the sql type index from the sql datatype.
+  * `result-set-read-fn` - function that takes a result set and a column index and returns
+  the data in dtype-next space so for example returns a `java.time.LocalTime` object as opposed
+  to a `java.sql.Time` object.
+  * `col-read-fn` - Function takes a column and a row idx and returns data as an sql datatype
+  - for instance a `java.sql.Time` object as opposed to a `java.time.LocalTime` object.
+
+
+  Your type should be a proper tech.v3.datatype datatype meaning it is either an existing
+  datatype or added via tech.v3.datatype.casting/add-object-datatype!.
+
+
+  Example:
+
+  For our example let's say we would like to support postgreSQL's jsonb datatype.  We first
+  create a record type to denote json data and register it with dtype-next.  Next we build
+  a dataset with a column of this datatype.
+
+  Next we register a way to input and get back this data from sql.  After that columns of
+  the new datatype will be automatically marshalled into/out of sql.
+
+```clojure
+
+user> (def conn (tech.v3.dataset.sql-test-utils/connect :postgre-sql))
+#'user/conn
+user> conn
+#object[org.postgresql.jdbc.PgConnection 0x421726aa \"org.postgresql.jdbc.PgConnection@421726aa\"]
+user> (require '[tech.v3.dataset :as ds])
+nil
+user> (require '[tech.v3.dataset.casting :as casting])
+Execution error (FileNotFoundException) at user/eval36187 (REPL:11590).
+Could not locate tech/v3/dataset/casting__init.class, tech/v3/dataset/casting.clj or tech/v3/dataset/casting.cljc on classpath.
+user> (require '[tech.v3.datatype.casting :as casting])
+nil
+user> (require '[tech.v3.dataset.sql :as sql])
+nil
+user> (require '[clojure.data.json :as json])
+nil
+  user> (defrecord JSONData [json-data])
+
+user> (casting/add-object-datatype! :json-data JSONData)
+:ok
+user> (def json-type-index (-> (sql/database-type-table conn)
+                              (ds/filter-column \"TYPE_NAME\" #(= % \"jsonb\"))
+                              (ds/row-at -1)
+                              (get \"DATA_TYPE\")))
+#'user/json-type-index
+user> json-type-index
+1111
+user> (sql/database-name conn)
+\"PostgreSQL\"
+user> (sql/set-datatype-mapping!
+       \"PostgreSQL\" :json-data \"jsonb\" json-type-index
+       (fn [^java.sql.ResultSet rs col-idx]
+         (when-let [json-obj (.getObject rs col-idx)]
+           (-> json-obj
+               (str)
+               (json/read-str :key-fn keyword)
+               (JSONData.))))
+       (fn [col idx]
+         (when-let [col-obj (col idx)]
+           (-> col-obj
+               (:json-data)
+               (json/write-str)))))
+:ok
+user> (def table-name \"jsontable\")
+#'user/table-name
+user> (def test-ds (ds/->dataset {:jsoncol [(JSONData. {:a 1 :b 2})
+                                            (JSONData. {:c 2 :d 3})]}
+                                    {:dataset-name table-name}))
+#'user/test-ds
+user> test-ds
+jsontable [2 1]:
+
+|                  :jsoncol |
+|---------------------------|
+| {:json-data {:a 1, :b 2}} |
+| {:json-data {:c 2, :d 3}} |
+user> (test-ds :jsoncol)
+#tech.v3.dataset.column<json-data>[2]
+:jsoncol
+[user.JSONData@db1bf962, user.JSONData@db1bf861]
+user> (sql/create-table! conn test-ds)
+nil
+user> (sql/insert-dataset! conn test-ds)
+nil
+user> (sql/sql->dataset conn (str \"select * from \" table-name)
+                        {:key-fn keyword})
+_unnamed [2 1]:
+
+|                  :jsoncol |
+|---------------------------|
+| {:json-data {:a 1, :b 2}} |
+| {:json-data {:c 2, :d 3}} |
+```"
+  [database-name datatype sql-datatype sql-type-index
+   result-set-read-fn col-read-fn]
+  (swap! database-data*
+         (fn [db-data-map]
+           (-> db-data-map
+               (assoc-in [database-name datatype :sql-datatype] sql-datatype)
+               (assoc-in [database-name sql-datatype] {:column->sql
+                                                       [sql-type-index col-read-fn]
+                                                       :sql->column
+                                                       [datatype result-set-read-fn]}))))
+  :ok)
+
+
+(set-datatype-mapping! "PostgreSQL" :boolean "bool" -7
+                       generic-sql->column
+                       generic-column->sql)
+
+
+(set-datatype-mapping! "Microsoft SQL Server" :boolean "bit" -7
+                       generic-sql->column
+                       generic-column->sql)
 
 
 (defn- column-metadata->sql-datatype
@@ -505,11 +632,11 @@ via the options map or as the key :primary-key in the dataset metadata")))
     read-fn
     [(sql-datatypes/type-index sql-datatype)
      (case sql-datatype
-       "text" (make-column-convert-read str)
-       "date" (make-column-convert-read #(java.sql.Date/valueOf ^LocalDate %))
-       "time" (make-column-convert-read #(java.sql.Time/valueOf ^LocalTime %))
-       "timestamp" (make-column-convert-read #(java.sql.Timestamp/from ^Instant %))
-       column-generic-read)]))
+       "text" (make-convert-column->sql str)
+       "date" (make-convert-column->sql #(java.sql.Date/valueOf ^LocalDate %))
+       "time" (make-convert-column->sql #(java.sql.Time/valueOf ^LocalTime %))
+       "timestamp" (make-convert-column->sql #(java.sql.Timestamp/from ^Instant %))
+       generic-column->sql)]))
 
 
 (defn- column->sql-fn
