@@ -259,24 +259,20 @@ _unnamed [5 3]:
   the new datatype will be automatically marshalled into/out of sql.
 
 ```clojure
-
 user> (def conn (tech.v3.dataset.sql-test-utils/connect :postgre-sql))
 #'user/conn
 user> conn
 #object[org.postgresql.jdbc.PgConnection 0x421726aa \"org.postgresql.jdbc.PgConnection@421726aa\"]
 user> (require '[tech.v3.dataset :as ds])
 nil
-user> (require '[tech.v3.dataset.casting :as casting])
-Execution error (FileNotFoundException) at user/eval36187 (REPL:11590).
-Could not locate tech/v3/dataset/casting__init.class, tech/v3/dataset/casting.clj or tech/v3/dataset/casting.cljc on classpath.
 user> (require '[tech.v3.datatype.casting :as casting])
 nil
 user> (require '[tech.v3.dataset.sql :as sql])
 nil
 user> (require '[clojure.data.json :as json])
 nil
-  user> (defrecord JSONData [json-data])
-
+user> (defrecord JSONData [json-data])
+JSONData
 user> (casting/add-object-datatype! :json-data JSONData)
 :ok
 user> (def json-type-index (-> (sql/database-type-table conn)
