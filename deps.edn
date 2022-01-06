@@ -5,7 +5,7 @@
                 ;;Various users of the tmd system are still on jdk-8
                 com.microsoft.sqlserver/mssql-jdbc {:mvn/version "9.4.1.jre8"}
                 seancorfield/next.jdbc     {:mvn/version "1.0.424"}
-                techascent/tech.ml.dataset {:mvn/version "6.044"}}
+                techascent/tech.ml.dataset {:mvn/version "6.046"}}
    :extra-paths ["test"]}
   :test
   {:extra-deps {com.cognitect/test-runner
@@ -20,7 +20,7 @@
    :exec-fn hf.depstar/jar
    :exec-args {:group-id "techascent"
                :artifact-id "tech.ml.dataset.sql"
-               :version "6.044-00"
+               :version "6.046-00"
                :sync-pom true
                :jar "target/tech.ml.dataset.sql.jar"}}
   ;;deploy to clojars
@@ -43,7 +43,7 @@
   {:extra-deps {codox-theme-rdash/codox-theme-rdash {:mvn/version "0.1.2"}
                 com.cnuernber/codox {:mvn/version "1.000"}
                 cider/cider-nrepl {:mvn/version "0.26.0"}
-                techascent/tech.ml.dataset {:mvn/version "6.044"}}
+                techascent/tech.ml.dataset {:mvn/version "6.046"}}
    :exec-fn codox.main/-main
    :exec-args {:arg-paths [[:aliases :depstar :exec-args]]
                :description "SQL bindings for tech.ml.dataset"
