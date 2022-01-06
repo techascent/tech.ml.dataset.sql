@@ -233,7 +233,7 @@ _unnamed [5 3]:
 (defn set-datatype-mapping!
   "Add a database specific datatype mapping.
 
-  * `datatype-name - name of database
+  * `database-name` - name of database
   * `datatype` - dtype-next datatype
   * `sql-datatype` - sql datatype to to map to.
   * `sql-type-index` - type index to use to set missing.  See [[datatype-type-table]]
