@@ -20,7 +20,7 @@
    :exec-fn hf.depstar/jar
    :exec-args {:group-id "techascent"
                :artifact-id "tech.ml.dataset.sql"
-               :version "6.046-00"
+               :version "6.046-01"
                :sync-pom true
                :jar "target/tech.ml.dataset.sql.jar"}}
   ;;deploy to clojars

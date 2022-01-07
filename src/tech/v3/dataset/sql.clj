@@ -153,16 +153,16 @@ _unnamed [5 3]:
 
 
 (def ^:private default-sql-types {:int8 "tinyint"
-                        :int16 "smallint"
-                        :int32 "int"
-                        :int64 "bigint"
-                        :float32 "float"
-                        :float64 "double precision"
-                        :string "varchar(4096)"
-                        :text "text"
-                        :local-date "date"
-                        :local-time "time"
-                        :instant "timestamp"})
+                                  :int16 "smallint"
+                                  :int32 "int"
+                                  :int64 "bigint"
+                                  :float32 "float"
+                                  :float64 "double precision"
+                                  :string "varchar(4096)"
+                                  :text "text"
+                                  :local-date "date"
+                                  :local-time "time"
+                                  :instant "timestamp"})
 
 
 (defn- default-sql-datatype
@@ -378,13 +378,13 @@ _unnamed [2 1]:
     (str item)))
 
 
-(defn- sanitize
+(defn ^:no-doc sanitize
   ^String [item]
   (-> (->str item)
       (.replace "-" "_")))
 
 
-(defn- table-name
+(defn ^:no-doc table-name
   (^String [dataset options]
    (if (string? dataset)
      dataset
@@ -393,7 +393,7 @@ _unnamed [2 1]:
    (table-name dataset nil)))
 
 
-(defn- primary-key
+(defn ^:no-doc primary-key
   ([dataset options]
    (when (nil? dataset)
      (throw (Exception. "No dataset provided")))
@@ -405,7 +405,7 @@ _unnamed [2 1]:
    (primary-key dataset nil)))
 
 
-(defn- column-metadata
+(defn ^:no-doc column-metadata
   [dataset]
   (cond
     (ds-impl/dataset? dataset)
