@@ -528,12 +528,13 @@ _unnamed [2 1]:
   true
 ```
   "
-    [conn dataset]
+    [conn dataset & options]
     (try
       (sql->dataset conn (format "Select COUNT(*) from %s where 1 = 0"
-                                 (table-name dataset nil)))
+                                 (table-name dataset options)))
       true
       (catch Throwable e
+        (log/info :throwable e)
         false)))
 
 
@@ -556,13 +557,15 @@ _unnamed [2 1]:
 (defn ensure-table!
   "Create a table if it does not exist.  See documentation for create-table!"
   ([^Connection conn dataset options]
-   (if-not (table-exists? conn dataset)
+   (if-not (table-exists? conn dataset options)
      (do
        (create-table! conn dataset options)
        true)
      false))
   ([^Connection conn dataset]
    (ensure-table! conn dataset {})))
+
+
 
 
 (defn- column-metadata->insert-sql
