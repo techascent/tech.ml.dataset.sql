@@ -534,7 +534,6 @@ _unnamed [2 1]:
                                  (table-name dataset options)))
       true
       (catch Throwable e
-        (log/info :throwable e)
         false)))
 
 
