@@ -162,6 +162,14 @@
                        (vec dst-rdr))
                     (format "Object equals for column %s" cname))))))))))
 
+(def-db-test ensure-table
+             (with-temp-table table-name
+                              (let [test-ds (ds/->dataset {:a (range 10)}
+                                                          {:dataset-name "!unnamed"})]
+                                (sql/ensure-table! (dev-conn) test-ds {:table-name table-name})
+                                (sql/ensure-table! (dev-conn) test-ds {:table-name table-name})))
+             )
+
 
 (def-db-test batch-size
   (with-temp-table table-name
