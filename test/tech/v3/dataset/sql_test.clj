@@ -165,7 +165,7 @@
 
 (def-db-test ensure-take-table-name-opt
   (let [table-name (uuid-table-name)
-        ds (ds/->dataset {:a 1} {:dataset-name table-name})
+        ds (ds/->dataset {:a 1} {:dataset-name "_unnamed"})
         ensure (sql/ensure-table! (dev-conn) ds {:table-name table-name})]
     (is (= ensure true))))
 

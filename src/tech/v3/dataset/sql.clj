@@ -528,7 +528,7 @@ _unnamed [2 1]:
   true
 ```
   "
-    [conn dataset & options]
+    [conn dataset & [options]]
     (try
       (sql->dataset conn (format "Select COUNT(*) from %s where 1 = 0"
                                  (table-name dataset options)))
