@@ -9,7 +9,7 @@
             [tech.v3.datatype :as dtype]
             [tech.v3.datatype.casting :as casting]
             [tech.v3.dataset.sql-test-utils :refer [def-db-test dev-conn] :as sql-utils]
-            [clojure.data.json :as json]
+            [charred.api :as json]
             [next.jdbc :as jdbc]
             [clojure.test :refer [deftest is]])
   (:import [java.util UUID]
@@ -208,13 +208,13 @@
          (when-let [json-obj (.getObject rs col-idx)]
            (-> json-obj
                (str)
-               (json/read-str :key-fn keyword)
+               (json/read-json :key-fn keyword)
                (JSONData.))))
        (fn [col idx]
          (when-let [col-obj (col idx)]
            (-> col-obj
                (:json-data)
-               (json/write-str)))))
+               (json/write-json-str)))))
 
       (with-temp-table table-name
         (let [test-ds (ds/->dataset {:jsoncol [(JSONData. {:a 1 :b 2})
