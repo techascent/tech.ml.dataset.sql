@@ -48,7 +48,7 @@ Provided in namespace `tech.ml.dataset.sql`:
 ## Example
 
 ```clojure
-user> (require '[tech.ml.dataset :as ds])
+user> (require '[tech.v3.dataset :as ds])
 nil
 user> (def ds (ds/->dataset "https://github.com/techascent/tech.ml.dataset/raw/master/test/data/stocks.csv"))
 #'user/ds
@@ -62,7 +62,7 @@ https://github.com/techascent/tech.ml.dataset/raw/master/test/data/stocks.csv [5
 |   MSFT | 2000-03-01 | 43.22 |
 |   MSFT | 2000-04-01 | 28.37 |
 |   MSFT | 2000-05-01 | 25.45 |
-user> (require '[tech.ml.dataset.sql :as ds-sql])
+user> (require '[tech.v3.dataset.sql :as ds-sql])
 nil
 user> ;;Connections should be created with auto-commit false so that inserts are batched.
 user> (require '[next.jdbc :as jdbc])
