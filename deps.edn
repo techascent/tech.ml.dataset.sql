@@ -5,7 +5,7 @@
                 ;;Various users of the tmd system are still on jdk-8
                 com.microsoft.sqlserver/mssql-jdbc {:mvn/version "9.4.1.jre8"}
                 seancorfield/next.jdbc     {:mvn/version "1.0.424"}
-                techascent/tech.ml.dataset {:mvn/version "6.094"}}
+                techascent/tech.ml.dataset {:mvn/version "7.000-beta-3"}}
    :extra-paths ["test"]}
   :test
   {:extra-deps {com.cognitect/test-runner
