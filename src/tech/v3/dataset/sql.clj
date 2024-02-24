@@ -901,7 +901,9 @@ via the options map or as the key :primary-key in the dataset metadata")))
          (let [rs (.executeQuery statement sql)]
            (result-set->dataset database-name rs options)))
        (catch Throwable e
-         (.rollback conn)
+         (try
+           (.rollback conn)
+           (catch Throwable e nil))
          (throw e)))))
   ([conn sql]
    (sql->dataset conn sql nil)))
