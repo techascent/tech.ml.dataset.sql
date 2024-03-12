@@ -5,7 +5,7 @@
                 ;;Various users of the tmd system are still on jdk-8
                 com.microsoft.sqlserver/mssql-jdbc {:mvn/version "9.4.1.jre8"}
                 seancorfield/next.jdbc     {:mvn/version "1.0.424"}
-                techascent/tech.ml.dataset {:mvn/version "7.000-beta-3"}}
+                techascent/tech.ml.dataset {:mvn/version "7.028"}}
    :extra-paths ["test"]}
   :test
   {:extra-deps {com.cognitect/test-runner
@@ -20,7 +20,7 @@
    :exec-fn hf.depstar/jar
    :exec-args {:group-id "techascent"
                :artifact-id "tech.ml.dataset.sql"
-               :version "6.047-SNAPSHOT"
+               :version "7.029-SNAPSHOT"
                :sync-pom true
                :jar "target/tech.ml.dataset.sql.jar"}}
   ;;deploy to clojars

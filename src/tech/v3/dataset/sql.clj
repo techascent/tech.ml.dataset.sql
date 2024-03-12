@@ -110,7 +110,6 @@ _unnamed [5 3]:
            [java.time Instant LocalDate LocalTime]
            [java.sql Connection ResultSetMetaData PreparedStatement
             DatabaseMetaData ResultSet ParameterMetaData Timestamp Time Date]
-           [tech.v3.dataset.io.column_parsers PParser]
            [tech.v3.dataset Text]))
 
 
@@ -778,7 +777,7 @@ via the options map or as the key :primary-key in the dataset metadata")))
         (->> col-data
              (map (fn [{:keys [name read-fn col-idx datatype
                                result-set-metadata]}]
-                    (let [^PParser parser
+                    (let [parser
                           (if datatype
                             (col-parsers/make-fixed-parser name datatype nil)
                             (col-parsers/promotional-object-parser name nil))
@@ -787,9 +786,9 @@ via the options map or as the key :primary-key in the dataset metadata")))
                         ([row-idx]
                          (let [cval (read-fn)]
                            (when-not (.wasNull rs)
-                             (.addValue parser row-idx cval))))
+                             (col-parsers/add-value! parser row-idx cval))))
                         ([n-rows n-rows]
-                         (-> (.finalize parser n-rows)
+                         (-> (col-parsers/finalize! parser n-rows)
                              (assoc :tech.v3.dataset/name name
                                     :tech.v3.dataset/metadata {:result-set-metadata
                                                                result-set-metadata})))))))
